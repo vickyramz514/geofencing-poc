@@ -3,10 +3,12 @@ import type {
   DeliveryStatusPayload,
   GeofenceEventPayload,
   LocationUploadPayload,
+  OfficeGeofencePayload,
 } from '../types';
 
 export interface ApiClient {
   postLocation(body: LocationUploadPayload): Promise<ApiReceipt>;
+  postOffice(body: OfficeGeofencePayload): Promise<ApiReceipt>;
   postGeofenceEvent(body: GeofenceEventPayload): Promise<ApiReceipt>;
   postDeliveryStatus(
     deliveryId: string,
@@ -45,6 +47,9 @@ function receiptFrom(body: unknown, now: Date): ApiReceipt {
 export function createMockApiClient(now: () => Date = () => new Date()): ApiClient {
   return {
     async postLocation() {
+      return {receivedAt: now().toISOString()};
+    },
+    async postOffice() {
       return {receivedAt: now().toISOString()};
     },
     async postGeofenceEvent() {
@@ -96,6 +101,9 @@ export function createFetchApiClient(
   return {
     postLocation(body) {
       return postJson('/api/locations', body);
+    },
+    postOffice(body) {
+      return postJson('/api/office', body);
     },
     postGeofenceEvent(body) {
       return postJson('/api/geofence-events', body, body.eventId);

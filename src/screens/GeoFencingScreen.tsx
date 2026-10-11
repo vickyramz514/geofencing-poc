@@ -1,224 +1,212 @@
-import {ScrollView, StyleSheet, Text, View} from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
-import {EventLog} from '../components/EventLog';
-import {LocationStatusCard} from '../components/LocationStatusCard';
-import {SchoolCard} from '../components/SchoolCard';
+import {StatusBar, StyleSheet, Text, View} from 'react-native';
+import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {SchoolMap} from '../components/SchoolMap';
 import {TrackingControls} from '../components/TrackingControls';
+import {OFFICE_ID, OFFICE_NAME, OFFICE_RADIUS_METERS} from '../data/office';
 import {useDeliveryTracking} from '../hooks/useDeliveryTracking';
 import {colors, spacing} from '../theme';
-import {DELIVERY_STATUS_LABEL} from '../utils/deliveryStatus';
-import {formatDistance} from '../utils/format';
+import type {Presence, School} from '../types';
+import {formatCoordinate, formatDistance} from '../utils/format';
+
+function presenceCopy(presence: Presence | 'unknown', hasOffice: boolean, tracking: boolean): string {
+  if (!hasOffice) {
+    return tracking ? 'Getting your location…' : 'Start tracking to set the office area.';
+  }
+  if (presence === 'outside') {
+    return 'You are outside the office area.';
+  }
+  return 'You are inside the office area.';
+}
 
 export function GeoFencingScreen() {
   const tracking = useDeliveryTracking();
-  const schoolNameById = Object.fromEntries(
-    tracking.schools.map(item => [item.school.id, item.school.name]),
-  );
-  const selectedEvents = tracking.events.filter(
-    event => event.schoolId === tracking.selectedSchool.school.id,
-  );
+  const insets = useSafeAreaInsets();
+  const officeSchool: School | null = tracking.office
+    ? {
+        id: OFFICE_ID,
+        name: OFFICE_NAME,
+        address: '200 m around the location captured when tracking started',
+        latitude: tracking.office.latitude,
+        longitude: tracking.office.longitude,
+        radiusMeters: tracking.office.radiusMeters,
+        color: colors.primary,
+        deliveryNote: '',
+      }
+    : null;
+  const trackingOn = tracking.trackingStatus === 'tracking';
+  const outside = tracking.office != null && tracking.officePresence === 'outside';
+  const inside = tracking.office != null && !outside;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>{tracking.route.name}</Text>
-          <Text style={styles.title}>School deliveries</Text>
-          <Text style={styles.subtitle}>
-            GPS detects school entry and exit while the app is open. Start Tracking also registers
-            native regions for when the app is closed, after background location is allowed.
-            Arrival, delivery, and fitting stay separate actions.
-          </Text>
-          <Text style={styles.mode}>
-            {tracking.useMockApi
-              ? 'Mock mode — API calls are simulated on this device.'
-              : `Live API — ${tracking.apiBaseUrl}`}
-          </Text>
-        </View>
+    <View style={styles.screen}>
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+      <SchoolMap
+        schools={
+          officeSchool
+            ? [
+                {
+                  school: officeSchool,
+                  distanceMeters: tracking.distanceMeters,
+                  presence: tracking.officePresence,
+                },
+              ]
+            : []
+        }
+        location={tracking.location}
+        selectedSchoolId={OFFICE_ID}
+        tracking={trackingOn}
+        focus={tracking.office}
+        onSelectSchool={() => undefined}
+      />
 
+      <SafeAreaView style={styles.overlay} edges={['top', 'left', 'right']} pointerEvents="box-none">
+        <View style={styles.top} pointerEvents="none">
+          <Text style={styles.coords}>
+            {formatCoordinate(tracking.location?.latitude)},{' '}
+            {formatCoordinate(tracking.location?.longitude)}
+          </Text>
+          <View
+            style={[
+              styles.status,
+              outside ? styles.statusOutside : inside ? styles.statusInside : styles.statusWaiting,
+            ]}>
+            <Text style={styles.statusLabel}>
+              {!tracking.office ? 'Office area' : outside ? 'Outside' : 'Inside'}
+            </Text>
+            <Text style={styles.statusBody}>
+              {presenceCopy(tracking.officePresence, tracking.office != null, trackingOn)}
+            </Text>
+            {officeSchool ? (
+              <Text style={styles.statusMeta}>
+                {formatDistance(tracking.distanceMeters)} from center · {OFFICE_RADIUS_METERS} m
+              </Text>
+            ) : null}
+          </View>
+          {trackingOn && tracking.location && !tracking.accuracyAccepted ? (
+            <Text style={styles.warning}>GPS accuracy is worse than 50 m.</Text>
+          ) : null}
+        </View>
+      </SafeAreaView>
+
+      <View style={[styles.bottom, {paddingBottom: Math.max(insets.bottom, spacing.md)}]} pointerEvents="box-none">
+        {tracking.permissionDenied ? (
+          <View style={styles.bannerDanger}>
+            <Text style={styles.bannerBody}>
+              Location permission denied. Enable it in system settings, then start tracking.
+            </Text>
+          </View>
+        ) : null}
+        {tracking.errorMessage ? (
+          <View style={styles.bannerDanger}>
+            <Text style={styles.bannerBody}>{tracking.errorMessage}</Text>
+          </View>
+        ) : null}
+        {tracking.notice ? (
+          <View style={styles.bannerInfo}>
+            <Text style={styles.bannerBody}>{tracking.notice}</Text>
+          </View>
+        ) : null}
         <TrackingControls
-          tracking={tracking.trackingStatus === 'tracking'}
+          tracking={trackingOn}
           starting={tracking.trackingStatus === 'starting'}
           onStart={() => {
             tracking.startTracking().catch(() => undefined);
           }}
           onStop={tracking.stopTracking}
         />
-
-        {tracking.permissionDenied ? (
-          <View style={styles.bannerDanger}>
-            <Text style={styles.bannerTitle}>Location permission denied</Text>
-            <Text style={styles.bannerBody}>
-              GeoFencePOC needs location access while the app is open. Enable it in system settings,
-              then press Start Tracking.
-            </Text>
-          </View>
-        ) : null}
-
-        {tracking.errorMessage ? (
-          <View style={styles.bannerDanger}>
-            <Text style={styles.bannerTitle}>Something needs attention</Text>
-            <Text style={styles.bannerBody}>{tracking.errorMessage}</Text>
-          </View>
-        ) : null}
-
-        {tracking.notice ? (
-          <View style={styles.bannerInfo}>
-            <Text style={styles.bannerBody}>{tracking.notice}</Text>
-          </View>
-        ) : null}
-
-        <LocationStatusCard
-          location={tracking.location}
-          trackingStatus={tracking.trackingStatus}
-          isOnline={tracking.isOnline}
-          pendingCount={tracking.pendingCount}
-          lastSuccessAt={tracking.lastSuccessAt}
-          accuracyAccepted={tracking.accuracyAccepted}
-          geofencingLabel={tracking.geofencingLabel}
-        />
-
-        <SchoolMap
-          schools={tracking.schools}
-          location={tracking.location}
-          selectedSchoolId={tracking.selectedSchool.school.id}
-          tracking={tracking.trackingStatus === 'tracking'}
-          onSelectSchool={tracking.selectSchool}
-        />
-
-        <View style={styles.detail}>
-          <Text style={styles.section}>Selected school</Text>
-          <Text style={styles.detailName}>{tracking.selectedSchool.school.name}</Text>
-          <Text style={styles.detailMeta}>{tracking.selectedSchool.school.address}</Text>
-          <Text style={styles.detailMeta}>
-            Radius {tracking.selectedSchool.school.radiusMeters} m ·{' '}
-            {formatDistance(tracking.selectedSchool.distanceMeters)} ·{' '}
-            {DELIVERY_STATUS_LABEL[tracking.selectedSchool.status]}
-          </Text>
-          <Text style={styles.detailMeta}>
-            {tracking.selectedSchool.school.latitude.toFixed(6)},{' '}
-            {tracking.selectedSchool.school.longitude.toFixed(6)}
-          </Text>
-        </View>
-
-        <Text style={styles.section}>Schools</Text>
-        {tracking.schools.length === 0 ? (
-          <Text style={styles.empty}>No schools are configured for this route.</Text>
-        ) : (
-          tracking.schools.map(item => (
-            <SchoolCard
-              key={item.school.id}
-              school={item.school}
-              distanceMeters={item.distanceMeters}
-              presence={item.presence}
-              status={item.status}
-              arrivalSuggested={item.arrivalSuggested}
-              selected={item.school.id === tracking.selectedSchool.school.id}
-              busy={tracking.busySchoolId === item.school.id}
-              onSelect={() => tracking.selectSchool(item.school.id)}
-              onAdvance={status => {
-                tracking.advanceDelivery(item.school.id, status).catch(() => undefined);
-              }}
-            />
-          ))
-        )}
-
-        <EventLog
-          events={selectedEvents}
-          schoolNameById={schoolNameById}
-          title={`${tracking.selectedSchool.school.name} events`}
-        />
-        <EventLog events={tracking.events} schoolNameById={schoolNameById} />
-      </ScrollView>
-    </SafeAreaView>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
+  screen: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  content: {
-    padding: spacing.lg,
-    gap: spacing.lg,
-    paddingBottom: spacing.xl * 2,
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 72,
   },
-  header: {
+  top: {
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
     gap: spacing.sm,
   },
-  eyebrow: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  title: {
-    color: colors.text,
-    fontSize: 30,
-    fontWeight: '800',
-  },
-  subtitle: {
-    color: colors.muted,
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  mode: {
+  coords: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.infoSoft,
-    color: colors.info,
+    color: colors.text,
+    backgroundColor: 'rgba(255,255,255,0.92)',
     overflow: 'hidden',
     borderRadius: 999,
     paddingHorizontal: spacing.md,
-    paddingVertical: 6,
+    paddingVertical: 4,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  status: {
+    borderRadius: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: 2,
+  },
+  statusWaiting: {
+    backgroundColor: 'rgba(255,255,255,0.94)',
+  },
+  statusInside: {
+    backgroundColor: 'rgba(229, 244, 239, 0.96)',
+  },
+  statusOutside: {
+    backgroundColor: 'rgba(255, 244, 232, 0.96)',
+  },
+  statusLabel: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  statusBody: {
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  statusMeta: {
+    color: colors.muted,
+    fontSize: 12,
+  },
+  warning: {
+    alignSelf: 'flex-start',
+    color: colors.warning,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderRadius: 10,
+    overflow: 'hidden',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
     fontSize: 12,
     fontWeight: '700',
   },
+  bottom: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+  },
   bannerDanger: {
-    backgroundColor: colors.dangerSoft,
-    borderRadius: 14,
-    padding: spacing.lg,
-    gap: spacing.xs,
+    backgroundColor: 'rgba(253, 236, 236, 0.96)',
+    borderRadius: 12,
+    padding: spacing.md,
   },
   bannerInfo: {
-    backgroundColor: colors.infoSoft,
-    borderRadius: 14,
-    padding: spacing.lg,
-  },
-  bannerTitle: {
-    color: colors.danger,
-    fontWeight: '800',
-    fontSize: 15,
+    backgroundColor: 'rgba(232, 241, 251, 0.96)',
+    borderRadius: 12,
+    padding: spacing.md,
   },
   bannerBody: {
     color: colors.text,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  section: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  detail: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: spacing.lg,
-    gap: spacing.xs,
-  },
-  detailName: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  detailMeta: {
-    color: colors.muted,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  empty: {
-    color: colors.muted,
-    fontSize: 14,
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

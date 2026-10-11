@@ -60,6 +60,13 @@ export interface GeofenceEvent {
   uploadStatus: UploadStatus;
 }
 
+export interface OfficeGeofencePayload {
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  anchoredAt: string;
+}
+
 export interface LocationUploadPayload {
   latitude: number;
   longitude: number;

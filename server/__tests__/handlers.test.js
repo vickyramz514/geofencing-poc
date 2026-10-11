@@ -43,6 +43,36 @@ describe('geofence API handlers', () => {
     expect(store.events.size).toBe(1);
   });
 
+  it('anchors the office as inside and marks a later fix outside', () => {
+    const store = createStore();
+    const created = handleRequest(store, {
+      method: 'POST',
+      path: '/api/office',
+      headers: {},
+      body: {latitude: 13.08, longitude: 80.27, radiusMeters: 200, anchoredAt: '2026-10-11T00:00:00.000Z'},
+    });
+    expect(created.status).toBe(200);
+    expect(created.body.presence).toBe('INSIDE');
+
+    const current = handleRequest(store, {
+      method: 'GET',
+      path: '/api/office',
+      headers: {},
+      body: {},
+    });
+    expect(current.body.presence).toBe('INSIDE');
+    expect(current.body.office.radiusMeters).toBe(200);
+
+    const left = handleRequest(store, {
+      method: 'POST',
+      path: '/api/locations',
+      headers: {},
+      body: {latitude: 13.083, longitude: 80.27, accuracy: 8, timestamp: '2026-10-11T00:01:00.000Z'},
+    });
+    expect(left.body.presence).toBe('OUTSIDE');
+    expect(left.body.distanceMeters).toBeGreaterThan(200);
+  });
+
   it('records a delivery status', () => {
     const store = createStore();
     const result = handleRequest(store, {

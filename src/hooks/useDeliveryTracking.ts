@@ -1,7 +1,6 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import NetInfo from '@react-native-community/netinfo';
-import {Platform} from 'react-native';
-import {MOCK_ROUTE, MOCK_SCHOOLS, initialDeliveryStatuses} from '../data/mockSchools';
+import {OFFICE_ID, OFFICE_RADIUS_METERS} from '../data/office';
 import {createAppServices, type AppServices} from '../services/createAppServices';
 import {requestBackgroundLocation} from '../services/nativeLocationProvider';
 import {
@@ -17,15 +16,14 @@ import {
 } from '../services/nativeBackgroundGeofence';
 import {createTransitionDeduper, type TransitionDeduper} from '../utils/transitionDeduper';
 import type {
-  DeliveryStatus,
   GeofenceEvent,
+  GeofenceRegion,
   GeofenceTransition,
   LocationFix,
   LocationTrackingError,
   Presence,
   TrackingStatus,
 } from '../types';
-import {canTransition} from '../utils/deliveryStatus';
 import {haversineDistanceMeters} from '../utils/distance';
 
 function createEvent(transition: GeofenceTransition): GeofenceEvent {
@@ -63,7 +61,8 @@ export function useDeliveryTracking() {
   const services = servicesRef.current;
   const subscriptionsRef = useRef<Array<() => void>>([]);
   const deduperRef = useRef<TransitionDeduper>(createTransitionDeduper());
-  const deliveriesRef = useRef(initialDeliveryStatuses());
+  const officeRef = useRef<GeofenceRegion | null>(null);
+  const backgroundPermissionRef = useRef<'granted' | 'denied'>('denied');
 
   const [trackingStatus, setTrackingStatus] = useState<TrackingStatus>('idle');
   const [location, setLocation] = useState<LocationFix | null>(null);
@@ -74,15 +73,10 @@ export function useDeliveryTracking() {
   const [pendingCount, setPendingCount] = useState(0);
   const [lastSuccessAt, setLastSuccessAt] = useState<string | null>(null);
   const [events, setEvents] = useState<GeofenceEvent[]>([]);
-  const [deliveries, setDeliveries] = useState(deliveriesRef.current);
-  const [suggestions, setSuggestions] = useState<Record<string, boolean>>({});
-  const [presence, setPresence] = useState<Record<string, Presence | 'unknown'>>({});
-  const [selectedSchoolId, setSelectedSchoolId] = useState<string>(MOCK_SCHOOLS[0].id);
-  const [busySchoolId, setBusySchoolId] = useState<string | null>(null);
+  const [office, setOffice] = useState<GeofenceRegion | null>(null);
+  const [officePresence, setOfficePresence] = useState<Presence | 'unknown'>('unknown');
   const [accuracyAccepted, setAccuracyAccepted] = useState(true);
   const [backgroundActive, setBackgroundActive] = useState(false);
-
-  deliveriesRef.current = deliveries;
 
   const refreshPending = useCallback(async () => {
     const count = await servicesRef.current!.queue.count();
@@ -151,12 +145,11 @@ export function useDeliveryTracking() {
   }, [clearSubscriptions, services]);
 
   const publishEvent = useCallback(
-    (event: GeofenceEvent, entered: boolean) => {
+    (event: GeofenceEvent) => {
       setEvents(current => [event, ...current].slice(0, 100));
-      setSuggestions(current => ({
-        ...current,
-        [event.schoolId]: entered,
-      }));
+      if (event.schoolId === OFFICE_ID) {
+        setOfficePresence(event.eventType === 'EXIT' ? 'outside' : 'inside');
+      }
       settle(
         services.upload.sendGeofenceEvent(event).then(outcome => {
           if (outcome === 'uploaded' || outcome === 'duplicate') {
@@ -182,13 +175,12 @@ export function useDeliveryTracking() {
       const event = toGeofenceEvent(nativeEvent, nativeEvent.uploaded ? 'uploaded' : 'pending');
       if (nativeEvent.uploaded) {
         setEvents(current => [event, ...current].slice(0, 100));
-        setSuggestions(current => ({
-          ...current,
-          [nativeEvent.schoolId]: nativeEvent.eventType === 'ENTER',
-        }));
+        if (nativeEvent.schoolId === OFFICE_ID) {
+          setOfficePresence(nativeEvent.eventType === 'EXIT' ? 'outside' : 'inside');
+        }
         return;
       }
-      publishEvent(event, nativeEvent.eventType === 'ENTER');
+      publishEvent(event);
     },
     [publishEvent],
   );
@@ -203,11 +195,53 @@ export function useDeliveryTracking() {
     return unsubscribe;
   }, [acceptNativeEvent]);
 
+  const anchorOffice = useCallback(
+    (fix: LocationFix) => {
+      const region: GeofenceRegion = {
+        schoolId: OFFICE_ID,
+        latitude: fix.latitude,
+        longitude: fix.longitude,
+        radiusMeters: OFFICE_RADIUS_METERS,
+      };
+      officeRef.current = region;
+      setOffice(region);
+      services.geofencing.registerGeofence(region, 'inside');
+      setOfficePresence('inside');
+      settle(
+        services.api.postOffice({
+          latitude: region.latitude,
+          longitude: region.longitude,
+          radiusMeters: region.radiusMeters,
+          anchoredAt: new Date(fix.timestamp).toISOString(),
+        }),
+      );
+      const apiBaseUrl = services.environment.useMockApi ? '' : services.environment.apiBaseUrl;
+      settle(
+        startBackgroundMonitoring([region], apiBaseUrl)
+          .then(started => {
+            setBackgroundActive(started && backgroundPermissionRef.current === 'granted');
+          })
+          .catch(() => {
+            setNotice(
+              'Background regions could not be registered. Foreground detection is still running.',
+            );
+          }),
+      );
+    },
+    [services],
+  );
+
   const onFix = useCallback(
     (fix: LocationFix) => {
       setLocation(fix);
+      if (officeRef.current == null) {
+        anchorOffice(fix);
+      }
       const result = services.geofencing.processLocation(fix);
-      setPresence(services.geofencing.getPresence());
+      const nextPresence = services.geofencing.getPresence()[OFFICE_ID];
+      if (nextPresence === 'inside' || nextPresence === 'outside') {
+        setOfficePresence(nextPresence);
+      }
       setAccuracyAccepted(result.accepted);
       result.transitions.forEach(transition => {
         if (
@@ -219,11 +253,11 @@ export function useDeliveryTracking() {
         ) {
           return;
         }
-        publishEvent(createEvent(transition), transition.eventType === 'ENTER');
+        publishEvent(createEvent(transition));
       });
       settle(services.upload.handleFix(fix));
     },
-    [publishEvent, services],
+    [anchorOffice, publishEvent, services],
   );
 
   const onLocationError = useCallback((error: LocationTrackingError) => {
@@ -246,13 +280,9 @@ export function useDeliveryTracking() {
     setNotice(null);
     setPermissionDenied(false);
     try {
-      const regions = MOCK_SCHOOLS.map(school => ({
-        schoolId: school.id,
-        latitude: school.latitude,
-        longitude: school.longitude,
-        radiusMeters: school.radiusMeters,
-      }));
-      services.geofencing.registerSchools(regions);
+      officeRef.current = null;
+      setOffice(null);
+      setOfficePresence('unknown');
       services.upload.setTracking(true);
       clearSubscriptions();
       subscriptionsRef.current = [
@@ -260,24 +290,10 @@ export function useDeliveryTracking() {
         services.location.subscribeErrors(onLocationError),
       ];
       await services.location.start();
-      const backgroundPermission = await requestBackgroundLocation();
-      let nativeStarted = false;
-      try {
-        nativeStarted = await startBackgroundMonitoring(
-          regions,
-          services.environment.useMockApi ? '' : services.environment.apiBaseUrl,
-        );
-      } catch {
-        setNotice(
-          'Background regions could not be registered. Foreground detection is still running.',
-        );
-      }
-      const backgroundOn = nativeStarted && backgroundPermission === 'granted';
-      setBackgroundActive(backgroundOn);
-      if (nativeStarted && (Platform.OS === 'ios' || !backgroundOn)) {
+      backgroundPermissionRef.current = await requestBackgroundLocation();
+      if (backgroundPermissionRef.current !== 'granted') {
         setNotice(backgroundPermissionCopy);
       }
-      setPresence(services.geofencing.getPresence());
       setTrackingStatus('tracking');
     } catch (error) {
       clearSubscriptions();
@@ -307,8 +323,11 @@ export function useDeliveryTracking() {
     services.upload.setTracking(false);
     setBackgroundActive(false);
     settle(stopBackgroundMonitoring());
+    officeRef.current = null;
+    setOffice(null);
+    setOfficePresence('unknown');
+    services.geofencing.removeGeofence(OFFICE_ID);
     setTrackingStatus('stopped');
-    setPresence(services.geofencing.getPresence());
     settle(
       services.upload.flush().finally(() => {
         settle(refreshPending());
@@ -316,64 +335,19 @@ export function useDeliveryTracking() {
     );
   }, [clearSubscriptions, refreshPending, services]);
 
-  const advanceDelivery = useCallback(
-    async (schoolId: string, status: DeliveryStatus) => {
-      const current = deliveriesRef.current[schoolId];
-      if (!current || !canTransition(current, status)) {
-        return;
-      }
-      setBusySchoolId(schoolId);
-      setErrorMessage(null);
-      try {
-        const outcome = await services.upload.sendDeliveryStatus({
-          deliveryId: MOCK_ROUTE.id,
-          schoolId,
-          status,
-        });
-        setDeliveries(previous => ({...previous, [schoolId]: status}));
-        if (status === 'ARRIVED') {
-          setSuggestions(previous => ({...previous, [schoolId]: false}));
-        }
-        setNotice(
-          outcome === 'queued'
-            ? 'Status saved on this device. It will sync when the network returns.'
-            : null,
-        );
-      } catch (error) {
-        setErrorMessage(
-          error instanceof Error ? error.message : 'Delivery status could not be updated.',
-        );
-      } finally {
-        setBusySchoolId(null);
-        await refreshPending();
-      }
-    },
-    [refreshPending, services.upload],
-  );
-
-  const schools = useMemo(
-    () =>
-      MOCK_SCHOOLS.map(school => ({
-        school,
-        distanceMeters: location
-          ? haversineDistanceMeters(location, school)
-          : null,
-        presence: presence[school.id] ?? 'unknown',
-        status: deliveries[school.id] ?? 'PENDING',
-        arrivalSuggested:
-          Boolean(suggestions[school.id]) && deliveries[school.id] === 'IN_TRANSIT',
-      })),
-    [deliveries, location, presence, suggestions],
-  );
-
-  const selectedSchool = schools.find(item => item.school.id === selectedSchoolId) ?? schools[0];
+  const distanceMeters = useMemo(() => {
+    if (!office || !location) {
+      return null;
+    }
+    return haversineDistanceMeters(location, office);
+  }, [location, office]);
 
   return {
-    route: MOCK_ROUTE,
     useMockApi: services.environment.useMockApi,
     apiBaseUrl: services.environment.apiBaseUrl,
-    schools,
-    selectedSchool,
+    office,
+    officePresence,
+    distanceMeters,
     events,
     location,
     trackingStatus,
@@ -383,7 +357,6 @@ export function useDeliveryTracking() {
     isOnline,
     pendingCount,
     lastSuccessAt,
-    busySchoolId,
     accuracyAccepted,
     geofencingLabel: backgroundPlatformLabel(
       backgroundActive,
@@ -391,7 +364,5 @@ export function useDeliveryTracking() {
     ),
     startTracking,
     stopTracking,
-    advanceDelivery,
-    selectSchool: setSelectedSchoolId,
   };
 }

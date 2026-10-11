@@ -6,10 +6,9 @@ This workspace was generated with React Native **0.86.3** because the installed 
 
 ## What the proof of concept does
 
-- Shows three mock schools on a native map, each with a 200 metre geofence.
-- Starts and stops foreground GPS tracking from the dashboard.
-- Detects geofence **ENTER** and **EXIT** from GPS fixes. Entry can suggest arrival. It does not mark a delivery complete.
-- Keeps a separate status for every school: `PENDING → IN_TRANSIT → ARRIVED → DELIVERED → FITTING_IN_PROGRESS → COMPLETED`.
+- Anchors a 200 metre office circle on the device's current location when tracking starts.
+- Shows **inside the office area** until the device leaves that circle, then shows **outside**.
+- Detects **EXIT** when the device leaves and **ENTER** if it comes back. Opening the app inside the circle does not invent an entry.
 - Uploads locations on a movement and time policy, uploads geofence transitions immediately, and queues failed requests until the network returns.
 - Calls the local API in `server/` when `.env` points at it. Mock mode remains available.
 
@@ -133,6 +132,19 @@ An ENTER event while the school is `IN_TRANSIT` suggests arrival. Confirm arriva
 
 These routes are the client contract. `npm run server` implements them. Mock mode returns a `receivedAt` timestamp without calling the network.
 
+`POST /api/office`
+
+Sent when tracking starts, using the device's current coordinates. The server stores the circle and sets presence to `INSIDE`. `GET /api/office` returns the stored circle and presence. A later location or `EXIT` event changes presence to `OUTSIDE`.
+
+```json
+{
+  "latitude": 13.0827,
+  "longitude": 80.2707,
+  "radiusMeters": 200,
+  "anchoredAt": "2026-10-11T05:00:00.000Z"
+}
+```
+
 `POST /api/locations`
 
 ```json
@@ -215,7 +227,7 @@ src/
     LocationUploadService.ts
     SecureStorageService.ts
   utils/
-  data/mockSchools.ts
+  data/office.ts
   types/
 ```
 

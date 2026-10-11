@@ -15,6 +15,8 @@ function loadStore() {
     const raw = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
     store.locations = Array.isArray(raw.locations) ? raw.locations : [];
     store.deliveries = Array.isArray(raw.deliveries) ? raw.deliveries : [];
+    store.office = raw.office && typeof raw.office === 'object' ? raw.office : null;
+    store.presence = raw.presence === 'INSIDE' || raw.presence === 'OUTSIDE' ? raw.presence : 'UNKNOWN';
     const events = Array.isArray(raw.events) ? raw.events : [];
     events.forEach(event => {
       if (event && event.eventId) {
@@ -36,6 +38,8 @@ function saveStore(store) {
         locations: store.locations,
         deliveries: store.deliveries,
         events: [...store.events.values()],
+        office: store.office,
+        presence: store.presence,
       },
       null,
       2,

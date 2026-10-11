@@ -18,7 +18,7 @@ export interface ProcessLocationResult {
 }
 
 export interface GeofencingService {
-  registerGeofence(region: GeofenceRegion): void;
+  registerGeofence(region: GeofenceRegion, initialPresence?: Presence | 'unknown'): void;
   removeGeofence(schoolId: string): void;
   registerSchools(regions: GeofenceRegion[]): void;
   onTransition(listener: (transition: GeofenceTransition) => void): () => void;
@@ -40,11 +40,16 @@ export class ForegroundGeofencingService implements GeofencingService {
   private readonly lastEmitted = new Map<string, GeofenceTransition['eventType']>();
   private active = false;
 
-  registerGeofence(region: GeofenceRegion): void {
+  registerGeofence(
+    region: GeofenceRegion,
+    initialPresence: Presence | 'unknown' = 'unknown',
+  ): void {
     this.regions.set(region.schoolId, region);
-    if (!this.memory.has(region.schoolId)) {
-      this.memory.set(region.schoolId, createFenceMemory());
-    }
+    this.memory.set(region.schoolId, {
+      ...createFenceMemory(),
+      presence: initialPresence,
+    });
+    this.lastEmitted.delete(region.schoolId);
     this.active = true;
   }
 

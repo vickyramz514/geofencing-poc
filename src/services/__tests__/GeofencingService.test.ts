@@ -59,6 +59,25 @@ describe('ForegroundGeofencingService', () => {
     expect(service.getStatus().active).toBe(false);
   });
 
+  it('starts inside an office anchored at the current fix and emits EXIT only after leaving', () => {
+    const service = new ForegroundGeofencingService();
+    const here = fix(0, 8, 1_000);
+    service.registerGeofence(
+      {schoolId: 'office', latitude: 0, longitude: 0, radiusMeters: 200},
+      'inside',
+    );
+
+    const stayed = service.processLocation(here);
+    expect(stayed.transitions).toEqual([]);
+    expect(service.getPresence().office).toBe('inside');
+
+    const beyond = fix(0.003, 8, 2_000);
+    expect(service.processLocation(beyond).transitions).toEqual([]);
+    const left = service.processLocation({...beyond, timestamp: 3_000});
+    expect(left.transitions.map(transition => transition.eventType)).toEqual(['EXIT']);
+    expect(service.getPresence().office).toBe('outside');
+  });
+
   it('removes a school from monitoring', () => {
     const service = new ForegroundGeofencingService();
     service.registerGeofence(region);
