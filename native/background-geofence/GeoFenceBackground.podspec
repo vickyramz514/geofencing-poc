@@ -8,7 +8,7 @@ Pod::Spec.new do |s|
   s.platforms    = { :ios => "15.1" }
   s.source       = { :path => "." }
   s.source_files = "ios/**/*.{h,m,mm}"
-  s.frameworks   = "CoreLocation"
+  s.frameworks   = "CoreLocation", "UserNotifications"
 
   if defined?(install_modules_dependencies()) != nil
     install_modules_dependencies(s)

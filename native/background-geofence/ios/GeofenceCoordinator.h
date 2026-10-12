@@ -12,6 +12,7 @@ typedef void (^GeofenceEventHandler)(NSDictionary *event);
 - (NSArray<NSDictionary *> *)pendingEvents;
 - (void)markUploaded:(NSString *)eventId;
 - (void)setEventHandler:(nullable GeofenceEventHandler)handler;
+- (void)showNotificationForEventType:(NSString *)eventType eventId:(NSString *)eventId;
 
 @end
 

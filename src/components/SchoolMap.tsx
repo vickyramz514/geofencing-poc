@@ -24,11 +24,11 @@ interface SchoolMapProps {
   tracking: boolean;
   onSelectSchool: (schoolId: string) => void;
   focus?: {latitude: number; longitude: number} | null;
+  fenceRadiusMeters?: number;
 }
 
 const MIN_DELTA = 0.0006;
 const MAX_DELTA = 0.5;
-const FENCE_DELTA = 0.0055;
 
 function presenceLabel(presence: Presence | 'unknown'): string {
   if (presence === 'inside') {
@@ -66,6 +66,10 @@ function clampDelta(value: number): number {
   return Math.min(MAX_DELTA, Math.max(MIN_DELTA, value));
 }
 
+function deltaForRadius(radiusMeters: number): number {
+  return clampDelta((Math.max(radiusMeters, 50) * 4.8) / 111_320);
+}
+
 export function SchoolMap({
   schools,
   location,
@@ -73,11 +77,15 @@ export function SchoolMap({
   tracking,
   onSelectSchool,
   focus,
+  fenceRadiusMeters = 100,
 }: SchoolMapProps) {
   const provider = Platform.OS === 'android' ? PROVIDER_GOOGLE : PROVIDER_DEFAULT;
   const mapRef = useRef<MapView>(null);
   const regionRef = useRef<Region>(
-    regionAround(focus ?? location ?? {latitude: 20, longitude: 78}, focus ? FENCE_DELTA : 0.04),
+    regionAround(
+      focus ?? location ?? {latitude: 20, longitude: 78},
+      focus ? deltaForRadius(fenceRadiusMeters) : 0.04,
+    ),
   );
   const fittedOffice = useRef<string | null>(null);
   const introUntil = useRef(0);
@@ -94,19 +102,26 @@ export function SchoolMap({
     if (!focus) {
       return;
     }
-    const key = `${focus.latitude.toFixed(5)},${focus.longitude.toFixed(5)}`;
+    const centerKey = `${focus.latitude.toFixed(5)},${focus.longitude.toFixed(5)}`;
+    const key = `${centerKey}:${fenceRadiusMeters}`;
     if (fittedOffice.current === key) {
       return;
     }
+    const sameCenter = fittedOffice.current?.startsWith(`${centerKey}:`) === true;
     fittedOffice.current = key;
+    const fenceDelta = deltaForRadius(fenceRadiusMeters);
+    if (sameCenter) {
+      animateTo(regionAround(focus, fenceDelta), 400);
+      return;
+    }
     introUntil.current = Date.now() + 900;
-    const wide = regionAround(focus, 0.035);
+    const wide = regionAround(focus, Math.max(0.035, fenceDelta * 1.6));
     animateTo(wide, 1);
     const timer = setTimeout(() => {
-      animateTo(regionAround(focus, FENCE_DELTA), 700);
+      animateTo(regionAround(focus, fenceDelta), 700);
     }, 90);
     return () => clearTimeout(timer);
-  }, [focus]);
+  }, [focus, fenceRadiusMeters]);
 
   useEffect(() => {
     if (!follow || !location || Date.now() < introUntil.current) {
@@ -139,7 +154,7 @@ export function SchoolMap({
       return;
     }
     setFollow(false);
-    animateTo(regionAround(center, FENCE_DELTA), 500);
+    animateTo(regionAround(center, deltaForRadius(fenceRadiusMeters)), 500);
   };
 
   const mapTypes = ['standard', 'satellite', 'hybrid'] as const;
@@ -161,7 +176,7 @@ export function SchoolMap({
         rotateEnabled
         pitchEnabled
         toolbarEnabled={false}
-        mapPadding={{top: 96, right: 64, bottom: 96, left: 16}}
+        mapPadding={{top: 168, right: 64, bottom: 96, left: 16}}
         onPanDrag={() => setFollow(false)}
         onTouchStart={() => setFollow(false)}
         onRegionChangeComplete={region => {

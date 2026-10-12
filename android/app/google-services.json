@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "707170089849",
+    "project_id": "geofence-445c3",
+    "storage_bucket": "geofence-445c3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:707170089849:android:18c3dd2acf0581c6368da8",
+        "android_client_info": {
+          "package_name": "com.geofencepoc"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC64KhY2fCTU39Ra7xCSDCtv46c8HRVZ1M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

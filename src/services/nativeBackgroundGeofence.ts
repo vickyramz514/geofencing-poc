@@ -1,4 +1,4 @@
-import {NativeEventEmitter, NativeModules, Platform} from 'react-native';
+import {NativeEventEmitter, NativeModules, PermissionsAndroid, Platform} from 'react-native';
 import type {GeofenceEvent, GeofenceEventType, GeofenceRegion} from '../types';
 
 export interface NativeGeofenceEvent {
@@ -17,6 +17,8 @@ interface GeoFenceBackgroundModule {
   stopMonitoring(): Promise<boolean>;
   drainPending(): Promise<NativeGeofenceEvent[]>;
   markUploaded(eventId: string): void;
+  showGeofenceNotification?(eventType: GeofenceEventType, eventId: string): void;
+  requestNotificationPermission?(): Promise<boolean>;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
 }
@@ -78,6 +80,29 @@ export async function drainPendingBackgroundEvents(): Promise<NativeGeofenceEven
 
 export function markBackgroundEventUploaded(eventId: string): void {
   module()?.markUploaded(eventId);
+}
+
+export function showGeofenceNotification(eventType: GeofenceEventType, eventId: string): void {
+  module()?.showGeofenceNotification?.(eventType, eventId);
+}
+
+export async function requestGeofenceNotificationPermission(): Promise<void> {
+  if (Platform.OS === 'android') {
+    if (Number(Platform.Version) < 33) {
+      return;
+    }
+    await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS, {
+      title: 'Office alerts',
+      message: 'Allow notifications so GeoFencePOC can tell you when you enter or leave the office area.',
+      buttonPositive: 'Allow',
+      buttonNegative: 'Not now',
+    });
+    return;
+  }
+  const native = module();
+  if (native?.requestNotificationPermission) {
+    await native.requestNotificationPermission();
+  }
 }
 
 export function subscribeBackgroundTransitions(

@@ -1,5 +1,6 @@
 #import <React/RCTBridgeModule.h>
 #import <React/RCTEventEmitter.h>
+#import <UserNotifications/UserNotifications.h>
 
 #import "GeofenceCoordinator.h"
 
@@ -54,6 +55,19 @@ RCT_EXPORT_METHOD(drainPending:(RCTPromiseResolveBlock)resolve
 
 RCT_EXPORT_METHOD(markUploaded:(NSString *)eventId) {
   [[GeofenceCoordinator shared] markUploaded:eventId];
+}
+
+RCT_EXPORT_METHOD(showGeofenceNotification:(NSString *)eventType eventId:(NSString *)eventId) {
+  [[GeofenceCoordinator shared] showNotificationForEventType:eventType ?: @"ENTER" eventId:eventId ?: @""];
+}
+
+RCT_EXPORT_METHOD(requestNotificationPermission:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+  UNAuthorizationOptions options = UNAuthorizationOptionAlert | UNAuthorizationOptionSound | UNAuthorizationOptionBadge;
+  [[UNUserNotificationCenter currentNotificationCenter] requestAuthorizationWithOptions:options
+                                                                      completionHandler:^(BOOL granted, __unused NSError *error) {
+    resolve(@(granted));
+  }];
 }
 
 @end

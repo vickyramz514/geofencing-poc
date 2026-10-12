@@ -91,6 +91,11 @@ class GeofenceModule(private val reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
+  fun showGeofenceNotification(eventType: String, eventId: String) {
+    GeofenceNotifier.showTransition(reactContext, eventType, eventId)
+  }
+
+  @ReactMethod
   fun addListener(eventName: String) {
   }
 

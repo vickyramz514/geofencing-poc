@@ -37,6 +37,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             uploaded = false,
           )
           GeofenceStore.addPending(context, event)
+          GeofenceNotifier.showTransition(context, event.eventType, event.eventId)
           if (!GeofenceEvents.emit(event)) {
             GeofenceHeadlessService.start(context, event)
             GeofenceUploader.postEvent(context, event)

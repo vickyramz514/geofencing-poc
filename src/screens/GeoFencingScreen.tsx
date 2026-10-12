@@ -1,8 +1,9 @@
 import {StatusBar, StyleSheet, Text, View} from 'react-native';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
+import {RadiusPicker} from '../components/RadiusPicker';
 import {SchoolMap} from '../components/SchoolMap';
 import {TrackingControls} from '../components/TrackingControls';
-import {OFFICE_ID, OFFICE_NAME, OFFICE_RADIUS_METERS} from '../data/office';
+import {OFFICE_ID, OFFICE_NAME, OFFICE_RADIUS_OPTIONS} from '../data/office';
 import {useDeliveryTracking} from '../hooks/useDeliveryTracking';
 import {colors, spacing} from '../theme';
 import type {Presence, School} from '../types';
@@ -25,7 +26,7 @@ export function GeoFencingScreen() {
     ? {
         id: OFFICE_ID,
         name: OFFICE_NAME,
-        address: '200 m around the location captured when tracking started',
+        address: `${tracking.office.radiusMeters} m around the location captured when tracking started`,
         latitude: tracking.office.latitude,
         longitude: tracking.office.longitude,
         radiusMeters: tracking.office.radiusMeters,
@@ -56,35 +57,43 @@ export function GeoFencingScreen() {
         selectedSchoolId={OFFICE_ID}
         tracking={trackingOn}
         focus={tracking.office}
+        fenceRadiusMeters={tracking.radiusMeters}
         onSelectSchool={() => undefined}
       />
 
       <SafeAreaView style={styles.overlay} edges={['top', 'left', 'right']} pointerEvents="box-none">
-        <View style={styles.top} pointerEvents="none">
-          <Text style={styles.coords}>
-            {formatCoordinate(tracking.location?.latitude)},{' '}
-            {formatCoordinate(tracking.location?.longitude)}
-          </Text>
-          <View
-            style={[
-              styles.status,
-              outside ? styles.statusOutside : inside ? styles.statusInside : styles.statusWaiting,
-            ]}>
-            <Text style={styles.statusLabel}>
-              {!tracking.office ? 'Office area' : outside ? 'Outside' : 'Inside'}
+        <View style={styles.top} pointerEvents="box-none">
+          <RadiusPicker
+            value={tracking.radiusMeters}
+            options={OFFICE_RADIUS_OPTIONS}
+            onChange={tracking.setRadiusMeters}
+          />
+          <View pointerEvents="none" style={styles.details}>
+            <Text style={styles.coords}>
+              {formatCoordinate(tracking.location?.latitude)},{' '}
+              {formatCoordinate(tracking.location?.longitude)}
             </Text>
-            <Text style={styles.statusBody}>
-              {presenceCopy(tracking.officePresence, tracking.office != null, trackingOn)}
-            </Text>
-            {officeSchool ? (
-              <Text style={styles.statusMeta}>
-                {formatDistance(tracking.distanceMeters)} from center · {OFFICE_RADIUS_METERS} m
+            <View
+              style={[
+                styles.status,
+                outside ? styles.statusOutside : inside ? styles.statusInside : styles.statusWaiting,
+              ]}>
+              <Text style={styles.statusLabel}>
+                {!tracking.office ? 'Office area' : outside ? 'Outside' : 'Inside'}
               </Text>
+              <Text style={styles.statusBody}>
+                {presenceCopy(tracking.officePresence, tracking.office != null, trackingOn)}
+              </Text>
+              {officeSchool ? (
+                <Text style={styles.statusMeta}>
+                  {formatDistance(tracking.distanceMeters)} from center · {officeSchool.radiusMeters} m
+                </Text>
+              ) : null}
+            </View>
+            {trackingOn && tracking.location && !tracking.accuracyAccepted ? (
+              <Text style={styles.warning}>GPS accuracy is worse than 50 m.</Text>
             ) : null}
           </View>
-          {trackingOn && tracking.location && !tracking.accuracyAccepted ? (
-            <Text style={styles.warning}>GPS accuracy is worse than 50 m.</Text>
-          ) : null}
         </View>
       </SafeAreaView>
 
@@ -133,6 +142,9 @@ const styles = StyleSheet.create({
   top: {
     marginHorizontal: spacing.md,
     marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  details: {
     gap: spacing.sm,
   },
   coords: {

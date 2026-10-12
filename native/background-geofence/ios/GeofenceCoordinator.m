@@ -2,6 +2,7 @@
 
 #import <CoreLocation/CoreLocation.h>
 #import <UIKit/UIKit.h>
+#import <UserNotifications/UserNotifications.h>
 
 static NSString *const kRegionsKey = @"geofencepoc.regions";
 static NSString *const kPendingKey = @"geofencepoc.pending";
@@ -83,7 +84,10 @@ static NSString *const kApiKey = @"geofencepoc.apiBaseUrl";
     NSString *identifier = region[@"schoolId"];
     CLLocationDegrees latitude = [region[@"latitude"] doubleValue];
     CLLocationDegrees longitude = [region[@"longitude"] doubleValue];
-    CLLocationDistance radius = MAX([region[@"radiusMeters"] doubleValue], 100.0);
+    CLLocationDistance radius = [region[@"radiusMeters"] doubleValue];
+    if (radius < 50.0) {
+      radius = 50.0;
+    }
     CLCircularRegion *circle = [[CLCircularRegion alloc] initWithCenter:CLLocationCoordinate2DMake(latitude, longitude)
                                                                   radius:radius
                                                               identifier:identifier];
@@ -143,11 +147,54 @@ static NSString *const kApiKey = @"geofencepoc.apiBaseUrl";
     }
     [[NSUserDefaults standardUserDefaults] setObject:events forKey:kPendingKey];
   }
+  [self showNotificationForEventType:eventType eventId:eventId];
   if (self.eventHandler) {
     self.eventHandler(event);
   } else {
     [self uploadEvent:event];
   }
+}
+
+- (NSString *)notificationBodyForEventType:(NSString *)eventType eventId:(NSString *)eventId {
+  BOOL outside = [eventType isEqualToString:@"EXIT"];
+  NSString *verb = outside ? @"You left the" : @"You entered the";
+  NSArray *regions = [[NSUserDefaults standardUserDefaults] arrayForKey:kRegionsKey];
+  for (NSDictionary *region in regions) {
+    NSString *schoolId = region[@"schoolId"];
+    if (schoolId.length > 0 && [eventId hasPrefix:[schoolId stringByAppendingString:@":"]]) {
+      double radius = [region[@"radiusMeters"] doubleValue];
+      if (radius > 0) {
+        return [NSString stringWithFormat:@"%@ %.0f m office area.", verb, radius];
+      }
+    }
+  }
+  return [NSString stringWithFormat:@"%@ office area.", verb];
+}
+
+- (void)showNotificationForEventType:(NSString *)eventType eventId:(NSString *)eventId {
+  NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+  NSString *lastId = [defaults stringForKey:@"geofencepoc.notifyEventId"];
+  NSString *lastType = [defaults stringForKey:@"geofencepoc.notifyEventType"];
+  NSTimeInterval lastAt = [defaults doubleForKey:@"geofencepoc.notifyAt"];
+  NSTimeInterval now = [NSDate date].timeIntervalSince1970;
+  if (eventId.length > 0 && [eventId isEqualToString:lastId]) {
+    return;
+  }
+  if ([eventType isEqualToString:lastType] && (now - lastAt) < 60.0) {
+    return;
+  }
+  [defaults setObject:eventId forKey:@"geofencepoc.notifyEventId"];
+  [defaults setObject:eventType forKey:@"geofencepoc.notifyEventType"];
+  [defaults setDouble:now forKey:@"geofencepoc.notifyAt"];
+  BOOL outside = [eventType isEqualToString:@"EXIT"];
+  UNMutableNotificationContent *content = [UNMutableNotificationContent new];
+  content.title = outside ? @"Outside the office area" : @"Inside the office area";
+  content.body = [self notificationBodyForEventType:eventType eventId:eventId];
+  content.sound = [UNNotificationSound defaultSound];
+  UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:eventId.length > 0 ? eventId : eventType
+                                                                        content:content
+                                                                        trigger:nil];
+  [[UNUserNotificationCenter currentNotificationCenter] addNotificationRequest:request withCompletionHandler:nil];
 }
 
 - (void)uploadEvent:(NSDictionary *)event {
