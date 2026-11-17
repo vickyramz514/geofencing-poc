@@ -29,8 +29,6 @@ loadServerEnv(path.join(__dirname, '..', '.env'));
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
-const ADMIN_API_URL = (process.env.ADMIN_API_URL || '').replace(/\/$/, '');
-const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
 const dataDir = path.join(__dirname, 'data');
 const dataFile = path.join(dataDir, 'store.json');
 
@@ -70,55 +68,6 @@ function saveStore(store) {
       2,
     ),
   );
-}
-
-async function proxyAdminRequest(req, res, requestUrl, body) {
-  if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method || 'GET')) {
-    res.writeHead(405, {'Content-Type': 'application/json', 'Cache-Control': 'no-store'});
-    res.end(JSON.stringify({error: 'Method not allowed'}));
-    return;
-  }
-  if (!ADMIN_API_URL || !ADMIN_API_TOKEN) {
-    res.writeHead(503, {'Content-Type': 'application/json', 'Cache-Control': 'no-store'});
-    res.end(JSON.stringify({error: 'Admin API proxy is not configured on the server.'}));
-    return;
-  }
-  let target;
-  try {
-    const configuredBase = new URL(ADMIN_API_URL);
-    if (!['http:', 'https:'].includes(configuredBase.protocol)) throw new Error('Unsupported protocol');
-    const incoming = new URL(requestUrl, 'http://localhost');
-    const suffix = incoming.pathname.slice('/proxy/admin'.length);
-    target = `${ADMIN_API_URL}/admin${suffix}${incoming.search}`;
-  } catch {
-    res.writeHead(500, {'Content-Type': 'application/json', 'Cache-Control': 'no-store'});
-    res.end(JSON.stringify({error: 'Admin API proxy URL is invalid.'}));
-    return;
-  }
-
-  const headers = {
-    Accept: req.headers.accept || 'application/json',
-    Authorization: `Bearer ${ADMIN_API_TOKEN}`,
-  };
-  if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type'];
-  if (req.headers['idempotency-key']) headers['Idempotency-Key'] = req.headers['idempotency-key'];
-  try {
-    const upstream = await fetch(target, {
-      method: req.method,
-      headers,
-      body: ['GET', 'HEAD'].includes(req.method || '') ? undefined : body,
-      signal: AbortSignal.timeout(30_000),
-    });
-    const responseBody = Buffer.from(await upstream.arrayBuffer());
-    res.writeHead(upstream.status, {
-      'Content-Type': upstream.headers.get('content-type') || 'application/json',
-      'Cache-Control': 'no-store',
-    });
-    res.end(responseBody);
-  } catch {
-    res.writeHead(502, {'Content-Type': 'application/json', 'Cache-Control': 'no-store'});
-    res.end(JSON.stringify({error: 'Could not reach the admin API.'}));
-  }
 }
 
 const store = loadStore();
@@ -161,10 +110,6 @@ const server = http.createServer((req, res) => {
     Object.entries(req.headers).forEach(([key, value]) => {
       headers[key.toLowerCase()] = Array.isArray(value) ? value.join(',') : value || '';
     });
-    if (pathname === '/proxy/admin' || pathname.startsWith('/proxy/admin/')) {
-      void proxyAdminRequest(req, res, req.url || pathname, raw);
-      return;
-    }
     const result = handleRequest(store, {
       method: req.method,
       path: pathname,

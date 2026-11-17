@@ -5,13 +5,9 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     plugins: [react()],
-    server: {
-      proxy: {
-        '/proxy': {
-          target: env.ADMIN_PROXY_TARGET || 'http://localhost:8787',
-          changeOrigin: true,
-        },
-      },
+    define: {
+      __ADMIN_API_BASE_URL__: JSON.stringify(env.ADMIN_API_BASE_URL || 'http://localhost:3000/api'),
+      __ADMIN_API_TOKEN__: JSON.stringify(env.ADMIN_API_TOKEN || ''),
     },
   };
 });

@@ -153,9 +153,21 @@ type ApiEnvelope = {
   data?: unknown;
 } & Record<string, unknown>;
 
-const adminProxyRoot = '/proxy/admin';
-export const adminDataUrl = `${adminProxyRoot}/data`;
-export const apiBaseUrl = 'Server-side authenticated proxy';
+declare const __ADMIN_API_BASE_URL__: string;
+declare const __ADMIN_API_TOKEN__: string;
+
+const adminApiBaseUrl = (__ADMIN_API_BASE_URL__ || 'http://localhost:3000/api').replace(/\/+$/, '');
+const adminApiRoot = `${adminApiBaseUrl}/admin`;
+const adminApiToken = __ADMIN_API_TOKEN__ || '';
+export const adminDataUrl = `${adminApiRoot}/data`;
+export const apiBaseUrl = adminApiBaseUrl;
+
+function adminFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+  if (adminApiToken) headers.set('Authorization', `Bearer ${adminApiToken}`);
+  return fetch(input, { ...init, headers });
+}
 
 function getRecords<T>(value: unknown): T[] {
   if (Array.isArray(value)) return value as T[];
@@ -183,7 +195,7 @@ function schoolIdOf(item: Record<string, unknown>): string {
 }
 
 function endpointUrl(path: string, query: LocationQuery = {}): string {
-  const root = `${adminProxyRoot}/locations`;
+  const root = `${adminApiRoot}/locations`;
   const params = new URLSearchParams();
   const mapped = {
     schoolId: query.schoolId,
@@ -201,7 +213,7 @@ function endpointUrl(path: string, query: LocationQuery = {}): string {
 }
 
 function schoolEndpoint(path: string, query: { page?: number; limit?: number; search?: string; active?: boolean } = {}): string {
-  const root = `${adminProxyRoot}/schools`;
+  const root = `${adminApiRoot}/schools`;
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
     if (value !== undefined && value !== '') params.set(key, String(value));
@@ -218,11 +230,11 @@ function queryUrl(root: string, query: Record<string, string | number | undefine
 }
 
 function eventEndpoint(path = '', query: GeofenceEventQuery = {}): string {
-  return queryUrl(`${adminProxyRoot}/geofence-events${path}`, query as Record<string, string | number | undefined>);
+  return queryUrl(`${adminApiRoot}/geofence-events${path}`, query as Record<string, string | number | undefined>);
 }
 
 function deviceEndpoint(path = '', query: Record<string, string | number | undefined> = {}): string {
-  return queryUrl(`${adminProxyRoot}/devices${path}`, query);
+  return queryUrl(`${adminApiRoot}/devices${path}`, query);
 }
 
 async function readEnvelope(response: Response): Promise<ApiEnvelope> {
@@ -235,7 +247,7 @@ async function readEnvelope(response: Response): Promise<ApiEnvelope> {
 }
 
 async function requestJson(url: string, signal?: AbortSignal): Promise<unknown> {
-  const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+  const response = await adminFetch(url, { signal, headers: { Accept: 'application/json' } });
   const envelope = await readEnvelope(response);
   return envelope.data ?? envelope;
 }
@@ -263,7 +275,7 @@ function schoolRequestBody(input: SchoolGeofenceInput, includeId: boolean): Reco
 }
 
 async function mutateSchool(url: string, method: 'POST' | 'PUT', input: SchoolGeofenceInput): Promise<SchoolGeofence> {
-  const response = await fetch(url, {
+  const response = await adminFetch(url, {
     method,
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify(schoolRequestBody(input, method === 'POST')),
@@ -315,7 +327,7 @@ function parseBoolean(value: unknown, fallback: boolean): boolean {
 }
 
 export async function fetchSchools(query: { page?: number; limit?: number; search?: string; active?: boolean } = {}, signal?: AbortSignal): Promise<PaginatedSchools> {
-  const response = await fetch(schoolEndpoint('', query), { signal, headers: { Accept: 'application/json' } });
+  const response = await adminFetch(schoolEndpoint('', query), { signal, headers: { Accept: 'application/json' } });
   const envelope = await readEnvelope(response);
   const payload = envelope.data ?? envelope;
   const records = getRecords<unknown>(payload).map(normalizeSchool);
@@ -336,7 +348,7 @@ export function updateSchool(id: string, input: SchoolGeofenceInput): Promise<Sc
 }
 
 export async function deleteSchool(id: string): Promise<void> {
-  const response = await fetch(schoolEndpoint(`/${encodeURIComponent(id)}`), { method: 'DELETE', headers: { Accept: 'application/json' } });
+  const response = await adminFetch(schoolEndpoint(`/${encodeURIComponent(id)}`), { method: 'DELETE', headers: { Accept: 'application/json' } });
   const envelope = (await response.json().catch(() => ({}))) as ApiEnvelope;
   if (!response.ok || envelope.success === false) {
     const error = typeof envelope.error === 'object' && envelope.error ? envelope.error.message : envelope.error;
@@ -388,7 +400,7 @@ export function isApiNotFound(cause: unknown): boolean {
 }
 
 export async function fetchDashboard(signal?: AbortSignal): Promise<DashboardData> {
-  const value = await requestJson(`${adminProxyRoot}/dashboard`, signal);
+  const value = await requestJson(`${adminApiRoot}/dashboard`, signal);
   if (!value || typeof value !== 'object') throw new Error('Dashboard API returned an invalid response');
   const payload = value as Record<string, unknown>;
   const metrics = payload.metrics;
@@ -403,7 +415,7 @@ export async function fetchDashboard(signal?: AbortSignal): Promise<DashboardDat
 }
 
 export async function fetchDevices(query: { page?: number; limit?: number; active?: boolean; schoolId?: string; search?: string } = {}, signal?: AbortSignal) {
-  const response = await fetch(deviceEndpoint('', {
+  const response = await adminFetch(deviceEndpoint('', {
     page: query.page,
     limit: query.limit,
     active: query.active === undefined ? undefined : String(query.active),
@@ -420,28 +432,28 @@ export async function fetchDevices(query: { page?: number; limit?: number; activ
 }
 
 export async function createDevice(input: { deviceId: string; platform: 'android' | 'ios'; appVersion?: string; schoolIds: string[] }): Promise<DeviceRecord> {
-  const response = await fetch(deviceEndpoint(), {
+  const response = await adminFetch(deviceEndpoint(), {
     method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(input),
   });
   return await readEnvelope(response).then(envelope => envelope.data as DeviceRecord);
 }
 
 export async function updateDevice(deviceId: string, input: { platform?: 'android' | 'ios'; appVersion?: string | null; schoolIds?: string[] }): Promise<DeviceRecord> {
-  const response = await fetch(deviceEndpoint(`/${encodeURIComponent(deviceId)}`), {
+  const response = await adminFetch(deviceEndpoint(`/${encodeURIComponent(deviceId)}`), {
     method: 'PUT', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(input),
   });
   return await readEnvelope(response).then(envelope => envelope.data as DeviceRecord);
 }
 
 export async function setDeviceActive(deviceId: string, active: boolean): Promise<DeviceRecord> {
-  const response = await fetch(deviceEndpoint(`/${encodeURIComponent(deviceId)}/status`), {
+  const response = await adminFetch(deviceEndpoint(`/${encodeURIComponent(deviceId)}/status`), {
     method: 'PATCH', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ active }),
   });
   return await readEnvelope(response).then(envelope => envelope.data as DeviceRecord);
 }
 
 export async function fetchGeofenceEvents(query: GeofenceEventQuery = {}, signal?: AbortSignal) {
-  const response = await fetch(eventEndpoint('', query), { signal, headers: { Accept: 'application/json' } });
+  const response = await adminFetch(eventEndpoint('', query), { signal, headers: { Accept: 'application/json' } });
   const envelope = await readEnvelope(response);
   const payload = envelope.data ?? envelope;
   const records = getRecords<Record<string, unknown>>(payload).map(normalizeGeofenceEvent);
@@ -467,7 +479,7 @@ function normalizeGeofenceEvent(item: Record<string, unknown>): GeofenceEvent {
 }
 
 export async function exportGeofenceEvents(query: Omit<GeofenceEventQuery, 'page'> = {}): Promise<void> {
-  const response = await fetch(eventEndpoint('/export', { ...query, limit: 10_000 }), { headers: { Accept: 'text/csv' } });
+  const response = await adminFetch(eventEndpoint('/export', { ...query, limit: 10_000 }), { headers: { Accept: 'text/csv' } });
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as ApiEnvelope;
     const error = typeof body.error === 'object' && body.error ? body.error.message : body.error;

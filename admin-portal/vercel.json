@@ -1,8 +1,0 @@
-{
-  "rewrites": [
-    {
-      "source": "/proxy/admin/:path*",
-      "destination": "/api/proxy/admin/:path*"
-    }
-  ]
-}
