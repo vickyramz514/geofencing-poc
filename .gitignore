@@ -67,7 +67,6 @@ yarn-error.log
 /coverage
 
 # Local environment. Copy .env.example to .env. Do not commit secrets.
-.env
 .env.local
 server/data/
 
