@@ -109,7 +109,9 @@ Selecting a school marker or card shows its address, radius, distance, and deliv
 
 ## Web admin portal
 
-The separate React and TypeScript admin portal lives in `admin-portal/`. Its views cover overview, a Leaflet/OpenStreetMap live map, school geofences, devices, geofence events, location history, deliveries, and reports. It refreshes API data every 15 seconds and exports CSV reports. School geofences and devices are currently read-only because this API has no create/update endpoints or device inventory; device IDs are shown when available in API records. Paginated history screens report the total count returned by the API and export the records currently loaded by its response.
+The separate React and TypeScript admin portal lives in `admin-portal/`. Its views cover overview, a Leaflet/OpenStreetMap live map, school geofence management, devices, geofence events, location history, deliveries, and reports. It refreshes tracking data every 15 seconds and exports CSV reports. The school manager uses `GET /api/admin/schools`, `GET /api/admin/schools/{id}`, `POST /api/admin/schools`, and `PUT /api/admin/schools/{id}` for paginated search, school create/edit, and enable/disable. It supports circle radius configuration and GeoJSON Polygon editing on Leaflet Draw. Device management remains read-only because the admin API has no device inventory; assigned device IDs are displayed from school records. Paginated history screens report the total count returned by the API and export the records currently loaded by its response.
+
+Every browser admin request goes to the same-origin `/proxy/admin/*` endpoint. The Node server forwards it to `ADMIN_API_URL` and adds `Authorization: Bearer ${ADMIN_API_TOKEN}` from its server environment. The token is never read by Vite or included in the browser bundle. Set the same `ADMIN_API_TOKEN` in the upstream API server's `.env` and this proxy server's root `.env`; also set `ADMIN_API_URL` to the API base ending in `/api`, then restart both servers. For Vite development, `admin-portal/.env.example` sets `ADMIN_PROXY_TARGET=http://localhost:8787`; production hosting must route `/proxy/*` through an authenticated trusted proxy to this Node server.
 
 The Live GPS map requests `GET /api/admin/locations/latest`, `GET /api/admin/locations/history`, and `GET /api/admin/locations/{deviceId}`. It supports school/device/status filters, history date ranges and pagination, circles or GeoJSON Polygon/MultiPolygon boundaries, device detail popups, and fit/zoom controls. Grey markers indicate missing GPS time/coordinates or fixes older than five minutes. If the latest/history routes return 404, the portal uses the existing `/api/admin/data` response as a compatibility fallback. The checked-in local POC server does not implement the three per-location routes or device inventory; it can only populate the fallback from the records it stores.
 
@@ -122,9 +124,9 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL shown in the terminal (usually `http://localhost:5173`). The portal defaults to `http://localhost:8787` for its API. Copy `admin-portal/.env.example` to `admin-portal/.env` and set `VITE_API_URL` if the API runs elsewhere. Set the server's `ADMIN_ORIGIN` environment variable to the portal's exact origin when it differs from `http://localhost:5173`.
+Open the Vite URL shown in the terminal (usually `http://localhost:5173`). The Vite dev proxy sends `/proxy/*` requests to the Node server; set `ADMIN_PROXY_TARGET` in `admin-portal/.env` only if that server is at a different URL. Do not put `ADMIN_API_TOKEN` in the portal `.env` file.
 
-The portal is separate from the React Native mobile app. The current API does not provide authentication or user identity, device inventory management, or write operations for school geofences. The portal shows available device IDs from API records and keeps those screens read-only until the backend exposes those capabilities.
+The portal is separate from the React Native mobile app. Admin API calls use the server-side bearer token proxy, but there is no per-user identity or role-based access in the portal. The API also has no device inventory endpoint. School geofence write operations are available through the admin school routes.
 
 ## Location uploads
 

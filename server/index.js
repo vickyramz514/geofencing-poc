@@ -4,8 +4,33 @@ const fs = require('fs');
 const path = require('path');
 const {MAX_BODY_BYTES, createStore, handleRequest} = require('./handlers');
 
+function loadServerEnv(file) {
+  try {
+    const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return;
+      const separator = trimmed.indexOf('=');
+      if (separator < 1) return;
+      const key = trimmed.slice(0, separator).trim();
+      if (process.env[key] !== undefined) return;
+      let value = trimmed.slice(separator + 1).trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      process.env[key] = value;
+    });
+  } catch {
+    // The server can also receive configuration from its process environment.
+  }
+}
+
+loadServerEnv(path.join(__dirname, '..', '.env'));
+
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
+const ADMIN_API_URL = (process.env.ADMIN_API_URL || '').replace(/\/$/, '');
+const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
 const dataDir = path.join(__dirname, 'data');
 const dataFile = path.join(dataDir, 'store.json');
 
@@ -47,12 +72,61 @@ function saveStore(store) {
   );
 }
 
+async function proxyAdminRequest(req, res, requestUrl, body) {
+  if (!['GET', 'POST', 'PUT', 'DELETE'].includes(req.method || 'GET')) {
+    res.writeHead(405, {'Content-Type': 'application/json', 'Cache-Control': 'no-store'});
+    res.end(JSON.stringify({error: 'Method not allowed'}));
+    return;
+  }
+  if (!ADMIN_API_URL || !ADMIN_API_TOKEN) {
+    res.writeHead(503, {'Content-Type': 'application/json', 'Cache-Control': 'no-store'});
+    res.end(JSON.stringify({error: 'Admin API proxy is not configured on the server.'}));
+    return;
+  }
+  let target;
+  try {
+    const configuredBase = new URL(ADMIN_API_URL);
+    if (!['http:', 'https:'].includes(configuredBase.protocol)) throw new Error('Unsupported protocol');
+    const incoming = new URL(requestUrl, 'http://localhost');
+    const suffix = incoming.pathname.slice('/proxy/admin'.length);
+    target = `${ADMIN_API_URL}/admin${suffix}${incoming.search}`;
+  } catch {
+    res.writeHead(500, {'Content-Type': 'application/json', 'Cache-Control': 'no-store'});
+    res.end(JSON.stringify({error: 'Admin API proxy URL is invalid.'}));
+    return;
+  }
+
+  const headers = {
+    Accept: req.headers.accept || 'application/json',
+    Authorization: `Bearer ${ADMIN_API_TOKEN}`,
+  };
+  if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type'];
+  if (req.headers['idempotency-key']) headers['Idempotency-Key'] = req.headers['idempotency-key'];
+  try {
+    const upstream = await fetch(target, {
+      method: req.method,
+      headers,
+      body: ['GET', 'HEAD'].includes(req.method || '') ? undefined : body,
+      signal: AbortSignal.timeout(30_000),
+    });
+    const responseBody = Buffer.from(await upstream.arrayBuffer());
+    res.writeHead(upstream.status, {
+      'Content-Type': upstream.headers.get('content-type') || 'application/json',
+      'Cache-Control': 'no-store',
+    });
+    res.end(responseBody);
+  } catch {
+    res.writeHead(502, {'Content-Type': 'application/json', 'Cache-Control': 'no-store'});
+    res.end(JSON.stringify({error: 'Could not reach the admin API.'}));
+  }
+}
+
 const store = loadStore();
 
 const server = http.createServer((req, res) => {
   const pathname = (req.url || '/').split('?')[0];
   res.setHeader('Access-Control-Allow-Origin', process.env.ADMIN_ORIGIN || 'http://localhost:5173');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Idempotency-Key');
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -87,6 +161,10 @@ const server = http.createServer((req, res) => {
     Object.entries(req.headers).forEach(([key, value]) => {
       headers[key.toLowerCase()] = Array.isArray(value) ? value.join(',') : value || '';
     });
+    if (pathname === '/proxy/admin' || pathname.startsWith('/proxy/admin/')) {
+      void proxyAdminRequest(req, res, req.url || pathname, raw);
+      return;
+    }
     const result = handleRequest(store, {
       method: req.method,
       path: pathname,

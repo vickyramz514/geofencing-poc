@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import L, { type LatLngExpression } from 'leaflet';
 import { Circle, CircleMarker, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer, useMap } from 'react-leaflet';
@@ -7,6 +7,8 @@ import type { AdminData, DeviceRecord, GeofenceEvent, LocationRecord, SchoolGeof
 import { LiveLocationMap } from './LiveLocationMap';
 import 'leaflet/dist/leaflet.css';
 import './styles.css';
+
+const SchoolGeofencesManager = lazy(() => import('./SchoolGeofencesManager').then(module => ({ default: module.SchoolGeofencesManager })));
 
 type Section = 'Overview' | 'Live GPS map' | 'School geofences' | 'Devices' | 'Geofence events' | 'Location history' | 'Deliveries' | 'Reports';
 const EMPTY_DATA: AdminData = {
@@ -83,7 +85,6 @@ function App() {
     const matchesText = `${item.deviceId ?? ''} ${item.latitude} ${item.longitude}`.toLowerCase().includes(search.toLowerCase());
     return matchesText && inDateRange(item.timestamp, fromDate, toDate);
   }).reverse();
-  const filteredOffices = data.offices.filter(item => `${item.name ?? ''} ${item.id} ${item.deviceId ?? ''}`.toLowerCase().includes(search.toLowerCase()));
   const devices = useMemo(() => {
     if (data.devices.length) return data.devices;
     const assigned = new Map<string, DeviceRecord>();
@@ -133,7 +134,7 @@ function App() {
         {!loaded && !error ? <LoadingState /> : <>
           {section === 'Overview' && <Overview data={data} latest={latest} todayEvents={todayEvents} presentCount={presentCount} locations={locations} onOpen={setSection} />}
           {section === 'Live GPS map' && <LiveLocationMap />}
-          {section === 'School geofences' && <SchoolPage offices={filteredOffices} query={search} setQuery={setSearch} onExport={() => downloadCsv('school-geofences.csv', [['ID', 'School', 'Latitude', 'Longitude', 'Radius (m)', 'Presence', 'Device ID', 'Presence updated'], ...filteredOffices.map(item => [item.id, item.name, item.latitude, item.longitude, item.radiusMeters, item.presence, item.deviceId, item.presenceUpdatedAt])])} loaded={loaded} />}
+          {section === 'School geofences' && <Suspense fallback={<LoadingState />}><SchoolGeofencesManager /></Suspense>}
           {section === 'Devices' && <DevicesPage devices={devices} loaded={loaded} />}
           {section === 'Geofence events' && <EventsPage events={filteredEvents} query={search} setQuery={setSearch} eventType={eventType} setEventType={setEventType} onExport={exportEvents} loaded={loaded} total={data.eventPage.total} />}
           {section === 'Location history' && <LocationsPage locations={filteredLocations} query={search} setQuery={setSearch} fromDate={fromDate} toDate={toDate} setFromDate={setFromDate} setToDate={setToDate} onExport={exportLocations} loaded={loaded} total={data.locationPage.total} />}
@@ -160,10 +161,6 @@ function Overview({ data, latest, todayEvents, presentCount, locations, onOpen }
     </div>
     <div className="lower-grid"><section className="panel"><PanelHeader title="School geofences" subtitle="Configured locations and presence" action="Manage" onAction={() => onOpen('School geofences')} />{data.offices.length ? <OfficeList offices={data.offices.slice(0, 4)} /> : <EmptyState loaded title="No school geofences returned" detail="The API returned no configured school locations." />}</section><section className="panel"><PanelHeader title="Recent geofence events" subtitle="Latest entry and exit activity" action="View all" onAction={() => onOpen('Geofence events')} />{data.events.length ? <EventsTable events={data.events.slice().reverse().slice(0, 4)} /> : <EmptyState loaded title="No geofence events" detail="Entry and exit events will appear when reported by the API." />}</section></div>
   </>;
-}
-
-function SchoolPage({ offices, query, setQuery, onExport, loaded }: { offices: SchoolGeofence[]; query: string; setQuery: (value: string) => void; onExport: () => void; loaded: boolean }) {
-  return <section className="panel page-panel"><PanelHeader title="School geofence management" subtitle="Configured school locations and presence reported by the API" action="Export CSV" onAction={onExport} /><SearchInput value={query} onChange={setQuery} placeholder="Search schools, IDs, or device IDs" />{offices.length ? <OfficeList offices={offices} detailed /> : <EmptyState loaded={loaded} title="No matching school geofences" detail="The API returned no school records matching this search." />}<p className="api-readonly-note">This API exposes school geofences as read-only records. Add create or edit endpoints to enable changes here.</p></section>;
 }
 
 function DevicesPage({ devices, loaded }: { devices: DeviceRecord[]; loaded: boolean }) {
