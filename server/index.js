@@ -73,7 +73,7 @@ function saveStore(store) {
 }
 
 async function proxyAdminRequest(req, res, requestUrl, body) {
-  if (!['GET', 'POST', 'PUT', 'DELETE'].includes(req.method || 'GET')) {
+  if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method || 'GET')) {
     res.writeHead(405, {'Content-Type': 'application/json', 'Cache-Control': 'no-store'});
     res.end(JSON.stringify({error: 'Method not allowed'}));
     return;
@@ -126,7 +126,7 @@ const store = loadStore();
 const server = http.createServer((req, res) => {
   const pathname = (req.url || '/').split('?')[0];
   res.setHeader('Access-Control-Allow-Origin', process.env.ADMIN_ORIGIN || 'http://localhost:5173');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Idempotency-Key');
   if (req.method === 'OPTIONS') {
     res.writeHead(204);

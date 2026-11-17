@@ -2,9 +2,12 @@ import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import L, { type LatLngExpression } from 'leaflet';
 import { Circle, CircleMarker, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer, useMap } from 'react-leaflet';
-import { adminDataUrl, apiBaseUrl, downloadCsv, fetchAdminData } from './api';
-import type { AdminData, DeviceRecord, GeofenceEvent, LocationRecord, SchoolGeofence } from './api';
+import { adminDataUrl, apiBaseUrl, downloadCsv, exportGeofenceEvents, fetchAdminData } from './api';
+import type { AdminData, GeofenceEvent, LocationRecord, SchoolGeofence } from './api';
 import { LiveLocationMap } from './LiveLocationMap';
+import { DeviceManagementPage } from './DeviceManagementPage';
+import { GeofenceEventsPage as ApiGeofenceEventsPage } from './GeofenceEventsPage';
+import { LocationHistoryPage as ApiLocationHistoryPage } from './LocationHistoryPage';
 import 'leaflet/dist/leaflet.css';
 import './styles.css';
 
@@ -14,6 +17,12 @@ type Section = 'Overview' | 'Live GPS map' | 'School geofences' | 'Devices' | 'G
 const EMPTY_DATA: AdminData = {
   offices: [], locations: [], events: [], deliveries: [], devices: [],
   locationPage: {}, eventPage: {}, deliveryPage: {}, office: null, presence: 'UNKNOWN',
+  dashboard: {
+    generatedAt: '', definitions: { activeDeviceWindowHours: 24, staleGpsMinutes: 15, eventDayTimezone: 'UTC', presenceSource: '' },
+    metrics: { totalRegisteredDevices: 0, activeDevices: 0, totalSchools: 0, totalConfiguredGeofences: 0, devicesInsideGeofences: 0, devicesOutsideGeofences: 0, todaysEntryEvents: 0, todaysExitEvents: 0, devicesWithStaleGps: 0 },
+    latestGpsLocations: { records: [], pagination: {} },
+    devicesInsideGeofences: { data: [], pagination: {} }, devicesOutsideGeofences: { data: [], pagination: {} }, staleDevices: { data: [], pagination: {} },
+  },
 };
 const navItems: Array<[Section, string]> = [
   ['Overview', '▦'], ['Live GPS map', '⌖'], ['School geofences', '⌂'], ['Devices', '♙'],
@@ -46,8 +55,6 @@ function App() {
   const [error, setError] = useState('');
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [section, setSection] = useState<Section>('Overview');
-  const [search, setSearch] = useState('');
-  const [eventType, setEventType] = useState('All events');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const connected = !error && lastSync !== null;
@@ -60,7 +67,7 @@ function App() {
       setError('');
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === 'AbortError') return;
-      setError(`Could not load admin data from ${adminDataUrl}. Check the API URL and server.`);
+      setError(cause instanceof Error ? cause.message : `Could not load admin data from ${adminDataUrl}.`);
     } finally {
       if (!signal?.aborted) setLoaded(true);
     }
@@ -77,33 +84,11 @@ function App() {
   const latest = locations.at(-1);
   const todayEvents = events.filter(event => isToday(event.eventTime));
   const presentCount = data.offices.filter(item => ['PRESENT', 'INSIDE'].includes(String(item.presence).toUpperCase())).length;
-  const filteredEvents = events.filter(event => {
-    const matchesText = `${event.schoolName ?? ''} ${event.schoolId} ${event.eventType} ${event.eventId ?? ''}`.toLowerCase().includes(search.toLowerCase());
-    return matchesText && (eventType === 'All events' || event.eventType === eventType.toUpperCase());
-  }).reverse();
   const filteredLocations = locations.filter(item => {
-    const matchesText = `${item.deviceId ?? ''} ${item.latitude} ${item.longitude}`.toLowerCase().includes(search.toLowerCase());
-    return matchesText && inDateRange(item.timestamp, fromDate, toDate);
+    return inDateRange(item.timestamp, fromDate, toDate);
   }).reverse();
-  const devices = useMemo(() => {
-    if (data.devices.length) return data.devices;
-    const assigned = new Map<string, DeviceRecord>();
-    data.offices.forEach(office => {
-      if (office.deviceId) assigned.set(office.deviceId, { id: office.deviceId, schoolId: office.id, lastSeen: office.presenceUpdatedAt ?? undefined });
-    });
-    data.locations.forEach(location => {
-      if (location.deviceId && !assigned.has(location.deviceId)) assigned.set(location.deviceId, { id: location.deviceId, lastSeen: location.timestamp });
-    });
-    data.events.forEach(event => {
-      if (event.deviceId && !assigned.has(event.deviceId)) assigned.set(event.deviceId, { id: event.deviceId, schoolId: event.schoolId, lastSeen: event.eventTime });
-    });
-    return [...assigned.values()];
-  }, [data.devices, data.events, data.locations, data.offices]);
 
-  const exportEvents = () => downloadCsv('geofence-events.csv', [
-    ['Event ID', 'School', 'School ID', 'Type', 'Latitude', 'Longitude', 'Accuracy', 'Event time', 'Received at'],
-    ...filteredEvents.map(item => [item.eventId, item.schoolName, item.schoolId, item.eventType, item.latitude, item.longitude, item.accuracy, item.eventTime, item.receivedAt]),
-  ]);
+  const exportEvents = () => void exportGeofenceEvents({ from: fromDate ? `${fromDate}T00:00:00.000Z` : undefined, to: toDate ? `${toDate}T23:59:59.999Z` : undefined });
   const exportLocations = () => downloadCsv('location-history.csv', [
     ['Device ID', 'Latitude', 'Longitude', 'Accuracy', 'Heading', 'Timestamp', 'Received at'],
     ...filteredLocations.map(item => [item.deviceId, item.latitude, item.longitude, item.accuracy ?? item.accuracyMeters, item.heading, item.timestamp, item.receivedAt]),
@@ -123,21 +108,21 @@ function App() {
       <div className="workspace-label">DATA SOURCE</div>
       <div className="workspace"><div className="workspace-icon">API</div><div><b>Geofencing API</b><small>{apiBaseUrl}</small></div></div>
       <div className="nav-label">OPERATIONS</div>
-      <nav>{navItems.map(([name, icon]) => <button key={name} className={`nav-item ${section === name ? 'selected' : ''}`} onClick={() => { setSection(name); setSearch(''); }}><span className="nav-icon">{icon}</span>{name}{name === 'Geofence events' && <span className="nav-count">{data.events.length}</span>}</button>)}</nav>
+      <nav>{navItems.map(([name, icon]) => <button key={name} className={`nav-item ${section === name ? 'selected' : ''}`} onClick={() => setSection(name)}><span className="nav-icon">{icon}</span>{name}{name === 'Geofence events' && <span className="nav-count">{data.eventPage.total ?? data.events.length}</span>}</button>)}</nav>
       <div className="sidebar-bottom"><div className="connection-card"><span className={connected ? 'connection-dot' : 'connection-dot offline'}></span><div><b>{connected ? 'API connected' : error ? 'API unavailable' : 'Connecting to API'}</b><small>{lastSync ? `Synced ${timeAgo(lastSync.toISOString())}` : 'Waiting for first sync'}</small></div></div></div>
     </aside>
     <main className="main">
       <header className="topbar"><div className="crumb">Geofencing <span>/</span> <b>{section}</b></div><div className="top-actions"><div className="api-indicator"><i className={connected ? '' : 'offline'}></i>{connected ? 'API connected' : error ? 'API disconnected' : 'Connecting'}</div></div></header>
       <div className="content">
         {error && <div className="error-banner"><span>⚠</span><div><b>Data connection unavailable</b><small>{error}</small></div><button onClick={() => void refresh()}>Retry</button></div>}
-        <div className="page-heading"><div><div className="eyebrow">{new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase()}</div><h1>{section}</h1><p>{sectionDescription(section)}</p></div><div className="heading-actions"><div className="sync-status"><span className="sync-dot"></span>Updated {lastSync ? timeAgo(lastSync.toISOString()) : '—'}</div><button className="button secondary" onClick={() => void refresh()}><span className="refresh">⟳</span> Refresh</button><button className="button primary" onClick={section === 'Location history' ? exportLocations : section === 'Geofence events' ? exportEvents : exportReport}><span>↓</span> Export CSV</button></div></div>
+      <div className="page-heading"><div><div className="eyebrow">{new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase()}</div><h1>{section}</h1><p>{sectionDescription(section)}</p></div><div className="heading-actions"><div className="sync-status"><span className="sync-dot"></span>Updated {lastSync ? timeAgo(lastSync.toISOString()) : '—'}</div><button className="button secondary" onClick={() => void refresh()}><span className="refresh">⟳</span> Refresh</button>{!['Geofence events', 'Location history'].includes(section) && <button className="button primary" onClick={exportReport}><span>↓</span> Export CSV</button>}</div></div>
         {!loaded && !error ? <LoadingState /> : <>
           {section === 'Overview' && <Overview data={data} latest={latest} todayEvents={todayEvents} presentCount={presentCount} locations={locations} onOpen={setSection} />}
           {section === 'Live GPS map' && <LiveLocationMap />}
           {section === 'School geofences' && <Suspense fallback={<LoadingState />}><SchoolGeofencesManager /></Suspense>}
-          {section === 'Devices' && <DevicesPage devices={devices} loaded={loaded} />}
-          {section === 'Geofence events' && <EventsPage events={filteredEvents} query={search} setQuery={setSearch} eventType={eventType} setEventType={setEventType} onExport={exportEvents} loaded={loaded} total={data.eventPage.total} />}
-          {section === 'Location history' && <LocationsPage locations={filteredLocations} query={search} setQuery={setSearch} fromDate={fromDate} toDate={toDate} setFromDate={setFromDate} setToDate={setToDate} onExport={exportLocations} loaded={loaded} total={data.locationPage.total} />}
+          {section === 'Devices' && <DeviceManagementPage />}
+          {section === 'Geofence events' && <ApiGeofenceEventsPage schools={data.offices} />}
+          {section === 'Location history' && <ApiLocationHistoryPage schools={data.offices} />}
           {section === 'Deliveries' && <DeliveriesPage deliveries={data.deliveries.slice().reverse()} loaded={loaded} total={data.deliveryPage.total} />}
           {section === 'Reports' && <ReportsPage data={data} fromDate={fromDate} toDate={toDate} setFromDate={setFromDate} setToDate={setToDate} onExport={exportReport} />}
         </>}
@@ -148,31 +133,23 @@ function App() {
 }
 
 function Overview({ data, latest, todayEvents, presentCount, locations, onOpen }: { data: AdminData; latest?: LocationRecord; todayEvents: GeofenceEvent[]; presentCount: number; locations: LocationRecord[]; onOpen: (section: Section) => void }) {
+  const metrics = data.dashboard.metrics;
   return <>
     <div className="stat-grid">
-      <Stat title="Location updates" value={data.locationPage.total ?? data.locations.length} note={latest ? timeAgo(latest.timestamp) : 'No GPS updates received'} icon="⌖" tone="blue" badge="HISTORY" />
-      <Stat title="Geofence events" value={data.eventPage.total ?? data.events.length} note={`${todayEvents.length} recorded today`} icon="◎" tone="violet" badge="TODAY" />
-      <Stat title="School geofences" value={data.offices.length || '—'} note="Configured locations from API" icon="⌂" tone="amber" badge="SCHOOLS" />
-      <Stat title="Currently present" value={data.offices.length ? presentCount : '—'} note={data.offices.length ? `Across ${data.offices.length} school locations` : 'Presence data unavailable'} icon="◉" tone="green" badge="LIVE" />
+      <Stat title="Registered devices" value={metrics.totalRegisteredDevices} note={`${metrics.activeDevices} active`} icon="♙" tone="blue" badge="DEVICES" />
+      <Stat title="Schools" value={metrics.totalSchools} note={`${metrics.totalConfiguredGeofences} configured geofences`} icon="⌂" tone="amber" badge="SCHOOLS" />
+      <Stat title="Inside geofences" value={metrics.devicesInsideGeofences} note="Based on latest GPS fixes" icon="◉" tone="green" badge="INSIDE" />
+      <Stat title="Outside geofences" value={metrics.devicesOutsideGeofences} note={`${metrics.devicesWithStaleGps} devices have stale GPS`} icon="⌖" tone="violet" badge="GPS" />
+      <Stat title="Today's entries" value={metrics.todaysEntryEvents} note="UTC calendar day" icon="↘" tone="green" badge="ENTER" />
+      <Stat title="Today's exits" value={metrics.todaysExitEvents} note="UTC calendar day" icon="↗" tone="amber" badge="EXIT" />
+      <Stat title="Latest GPS updates" value={data.dashboard.latestGpsLocations.pagination.total ?? data.dashboard.latestGpsLocations.records.length} note={latest ? timeAgo(latest.timestamp) : 'No GPS updates received'} icon="⌖" tone="blue" badge="LATEST" />
     </div>
     <div className="dashboard-grid">
       <section className="panel map-panel"><PanelHeader title="Live geofence map" subtitle="GPS history, school fences, and event locations" action="Open map" onAction={() => onOpen('Live GPS map')} /><TrackingMap offices={data.offices} office={data.office} locations={locations} events={data.events} latest={latest} /><MapLegend /></section>
-      <section className="panel activity-panel"><PanelHeader title="Geofence activity" subtitle="Events recorded today" /><ActivityChart events={todayEvents} /><div className="activity-summary"><span className="activity-key"><i className="enter-key" />Entries</span><b>{todayEvents.filter(event => event.eventType === 'ENTER').length}</b><span className="activity-key"><i className="exit-key" />Exits</span><b>{todayEvents.filter(event => event.eventType === 'EXIT').length}</b></div></section>
+      <section className="panel activity-panel"><PanelHeader title="Geofence activity" subtitle="Recent events from the current history page" /><ActivityChart events={todayEvents} /><div className="activity-summary"><span className="activity-key"><i className="enter-key" />Today's entries (UTC)</span><b>{metrics.todaysEntryEvents}</b><span className="activity-key"><i className="exit-key" />Today's exits (UTC)</span><b>{metrics.todaysExitEvents}</b></div></section>
     </div>
     <div className="lower-grid"><section className="panel"><PanelHeader title="School geofences" subtitle="Configured locations and presence" action="Manage" onAction={() => onOpen('School geofences')} />{data.offices.length ? <OfficeList offices={data.offices.slice(0, 4)} /> : <EmptyState loaded title="No school geofences returned" detail="The API returned no configured school locations." />}</section><section className="panel"><PanelHeader title="Recent geofence events" subtitle="Latest entry and exit activity" action="View all" onAction={() => onOpen('Geofence events')} />{data.events.length ? <EventsTable events={data.events.slice().reverse().slice(0, 4)} /> : <EmptyState loaded title="No geofence events" detail="Entry and exit events will appear when reported by the API." />}</section></div>
   </>;
-}
-
-function DevicesPage({ devices, loaded }: { devices: DeviceRecord[]; loaded: boolean }) {
-  return <section className="panel page-panel"><PanelHeader title="Device management" subtitle="Devices returned by the admin API" />{devices.length ? <div className="table-scroll"><table><thead><tr><th>DEVICE</th><th>TYPE</th><th>ASSIGNED SCHOOL</th><th>STATUS</th><th>LAST SEEN</th></tr></thead><tbody>{devices.map(device => <tr key={device.id}><td><b>{device.name || device.id}</b></td><td>{device.deviceType || '—'}</td><td>{device.schoolId || '—'}</td><td><span className={`presence-pill ${device.status?.toUpperCase() === 'ACTIVE' ? 'present' : ''}`}>{device.status || 'Unknown'}</span></td><td>{dateTime(device.lastSeen)}</td></tr>)}</tbody></table></div> : <EmptyState loaded={loaded} title="No device inventory in API response" detail="The current admin response has no devices collection. School records also have null deviceId values, so the portal has no real devices to list." />}<p className="api-readonly-note">Device management requires a device inventory endpoint with device ID, assignment, status, and last-seen fields.</p></section>;
-}
-
-function EventsPage({ events, query, setQuery, eventType, setEventType, onExport, loaded, total }: { events: GeofenceEvent[]; query: string; setQuery: (value: string) => void; eventType: string; setEventType: (value: string) => void; onExport: () => void; loaded: boolean; total?: number }) {
-  return <section className="panel page-panel"><PanelHeader title="Geofence entry and exit events" subtitle={`${events.length} loaded${total != null ? ` of ${total} total` : ''}`} action="Export CSV" onAction={onExport} /><div className="table-controls"><SearchInput value={query} onChange={setQuery} placeholder="Search school or event ID" /><select value={eventType} onChange={event => setEventType(event.target.value)}><option>All events</option><option>Enter</option><option>Exit</option></select></div>{events.length ? <EventsTable events={events} /> : <EmptyState loaded={loaded} title="No geofence events" detail="No entry or exit events were returned for this filter." />}</section>;
-}
-
-function LocationsPage({ locations, query, setQuery, fromDate, toDate, setFromDate, setToDate, onExport, loaded, total }: { locations: LocationRecord[]; query: string; setQuery: (value: string) => void; fromDate: string; toDate: string; setFromDate: (value: string) => void; setToDate: (value: string) => void; onExport: () => void; loaded: boolean; total?: number }) {
-  return <section className="panel page-panel"><PanelHeader title="Location history" subtitle={`${locations.length} loaded${total != null ? ` of ${total} total` : ''}`} action="Export CSV" onAction={onExport} /><div className="table-controls"><SearchInput value={query} onChange={setQuery} placeholder="Search coordinates or device ID" /><DateRange fromDate={fromDate} toDate={toDate} setFromDate={setFromDate} setToDate={setToDate} /></div>{locations.length ? <div className="table-scroll"><table><thead><tr><th>DEVICE</th><th>COORDINATES</th><th>ACCURACY</th><th>HEADING</th><th>TIME</th><th>SERVER RECEIVED</th></tr></thead><tbody>{locations.map((item, i) => <tr key={`${item.timestamp}-${i}`}><td>{item.deviceId || '—'}</td><td className="coordinates">{coordinate(item.latitude, item.longitude)}</td><td>{item.accuracy ?? item.accuracyMeters ?? '—'} m</td><td>{item.heading ?? '—'}</td><td>{dateTime(item.timestamp)}</td><td>{dateTime(item.receivedAt)}</td></tr>)}</tbody></table></div> : <EmptyState loaded={loaded} title="No location history" detail="The API returned no location records for this filter." />}</section>;
 }
 
 function DeliveriesPage({ deliveries, loaded, total }: { deliveries: AdminData['deliveries']; loaded: boolean; total?: number }) {

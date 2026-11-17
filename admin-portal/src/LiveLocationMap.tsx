@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import L, { type LatLngExpression, type Map as LeafletMap } from 'leaflet';
 import { Circle, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer, useMap } from 'react-leaflet';
-import { fetchAdminData, fetchDeviceLocation, fetchLatestLocations, fetchLocationHistory, isApiNotFound } from './api';
-import type { AdminData, DeviceRecord, LocationRecord, PaginatedLocations, SchoolGeofence } from './api';
+import { fetchDeviceLocation, fetchLatestLocations, fetchLocationHistory, fetchSchools } from './api';
+import type { LocationRecord, PaginatedLocations, SchoolGeofence } from './api';
 
 const PAGE_SIZE = 100;
 const STALE_AFTER_MS = 5 * 60 * 1000;
@@ -32,7 +32,6 @@ export function LiveLocationMap() {
   const [filters, setFilters] = useState<MapFilters>({ schoolId: '', deviceId: '', status: 'ALL', startDate: '', endDate: '', page: 1 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [apiMode, setApiMode] = useState<'location-endpoints' | 'admin-data-fallback'>('location-endpoints');
   const [details, setDetails] = useState<Record<string, LocationRecord>>({});
   const [detailErrors, setDetailErrors] = useState<Record<string, string>>({});
   const [mapController, setMapController] = useState<MapController | null>(null);
@@ -52,28 +51,15 @@ export function LiveLocationMap() {
     const load = async () => {
       setLoading(true);
       try {
-        const [adminResult, latestResult, historyResult] = await Promise.allSettled([
-          fetchAdminData(controller.signal),
+        const [schoolResult, latestResult, historyResult] = await Promise.all([
+          fetchSchools({ page: 1, limit: 100 }, controller.signal),
           fetchLatestLocations({ schoolId: query.schoolId, deviceId: query.deviceId, limit: PAGE_SIZE }, controller.signal),
           fetchLocationHistory(query, controller.signal),
         ]);
         if (controller.signal.aborted || !active) return;
-        if (adminResult.status === 'rejected') throw adminResult.reason;
-        const admin = adminResult.value;
-        setSchools(admin.offices);
-
-        if (latestResult.status === 'fulfilled' && historyResult.status === 'fulfilled') {
-          setLatest(latestResult.value.records);
-          setHistory(historyResult.value);
-          setApiMode('location-endpoints');
-        } else {
-          const failed = latestResult.status === 'rejected' ? latestResult.reason : historyResult.status === 'rejected' ? historyResult.reason : null;
-          if (!isApiNotFound(failed)) throw failed;
-          const filteredHistory = filterFallbackLocations(admin.locations, query);
-          setLatest(latestPerDevice(filterFallbackLocations(admin.locations, { schoolId: query.schoolId, deviceId: query.deviceId }).records));
-          setHistory(paginate(filteredHistory, filters.page, PAGE_SIZE));
-          setApiMode('admin-data-fallback');
-        }
+        setSchools(schoolResult.records);
+        setLatest(latestResult.records);
+        setHistory(historyResult);
         setError('');
       } catch (cause) {
         if (!controller.signal.aborted && active) setError(cause instanceof Error ? cause.message : 'Could not load live location data.');
@@ -149,7 +135,7 @@ export function LiveLocationMap() {
       </MapContainer> : <div className="map-no-coordinates">{loading ? 'Loading locations…' : 'No GPS coordinates returned for the current filters.'}</div>}
       {positions.length > 0 && <div className="map-controls"><button title="Zoom in" onClick={() => mapController?.zoomIn()}>+</button><button title="Zoom out" onClick={() => mapController?.zoomOut()}>−</button><button onClick={() => mapController?.fitAll()}>Fit all markers</button></div>}
     </div>
-    <div className="live-map-legend"><span><i className="status-swatch inside" />Inside</span><span><i className="status-swatch outside" />Outside</span><span><i className="status-swatch stale" />Stale / unavailable</span><span><i className="school-swatch" />School geofence</span><small>Data source: {apiMode === 'location-endpoints' ? 'latest + history endpoints' : 'admin data compatibility fallback'}</small></div>
+    <div className="live-map-legend"><span><i className="status-swatch inside" />Inside</span><span><i className="status-swatch outside" />Outside</span><span><i className="status-swatch stale" />Stale / unavailable</span><span><i className="school-swatch" />School geofence</span><small>Data source: authenticated latest location, history, and school APIs</small></div>
     <div className="history-heading"><div><b>Location history</b><small>{history.records.length} shown · {total} total</small></div><div className="history-pagination"><button disabled={page <= 1 || loading} onClick={() => setFilter('page', page - 1)}>Previous</button><span>Page {page} of {Math.max(totalPages, 1)}</span><button disabled={page >= totalPages || loading} onClick={() => setFilter('page', page + 1)}>Next</button></div></div>
     {history.records.length ? <div className="table-scroll"><table><thead><tr><th>DEVICE</th><th>SCHOOL</th><th>COORDINATES</th><th>STATUS</th><th>GPS ACCURACY</th><th>RECORDED</th></tr></thead><tbody>{history.records.map((item, index) => {
       const status = resolveStatus(item, schools);
@@ -193,7 +179,30 @@ function resolveStatus(location: LocationRecord, schools: SchoolGeofence[]): Dev
   if (['UNAVAILABLE', 'GPS_UNAVAILABLE', 'NO_GPS'].includes(explicit)) return 'UNAVAILABLE';
   const assigned = location.schoolId ? schools.filter(school => school.id === location.schoolId) : schools;
   if (!assigned.length) return 'UNAVAILABLE';
-  return assigned.some(school => Number(school.radiusMeters) > 0 && distanceMeters(location, school) <= Number(school.radiusMeters)) ? 'INSIDE' : 'OUTSIDE';
+  return assigned.some(school => schoolContains(location, school)) ? 'INSIDE' : 'OUTSIDE';
+}
+
+function schoolContains(location: LocationRecord, school: SchoolGeofence): boolean {
+  const shape = school.geometry ?? school.polygon;
+  if (shape && typeof shape === 'object') {
+    const geometry = shape as { type?: string; coordinates?: unknown };
+    if (geometry.type === 'Polygon' && Array.isArray(geometry.coordinates)) {
+      const ring = geometry.coordinates[0];
+      if (Array.isArray(ring)) {
+        const x = Number(location.longitude), y = Number(location.latitude);
+        let inside = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const a = ring[i], b = ring[j];
+          if (!Array.isArray(a) || !Array.isArray(b)) continue;
+          const crosses = (Number(a[1]) > y) !== (Number(b[1]) > y)
+            && x < (Number(b[0]) - Number(a[0])) * (y - Number(a[1])) / (Number(b[1]) - Number(a[1])) + Number(a[0]);
+          if (crosses) inside = !inside;
+        }
+        return inside;
+      }
+    }
+  }
+  return Number(school.radiusMeters) > 0 && distanceMeters(location, school) <= Number(school.radiusMeters);
 }
 
 function distanceMeters(a: LocationRecord, b: SchoolGeofence): number {
@@ -225,17 +234,4 @@ function groupHistory(records: LocationRecord[]): Map<string, LocationRecord[]> 
   const grouped = new Map<string, LocationRecord[]>();
   records.forEach(record => { const key = record.deviceId || 'device-unavailable'; grouped.set(key, [...(grouped.get(key) ?? []), record]); });
   return grouped;
-}
-function latestPerDevice(records: LocationRecord[]): LocationRecord[] {
-  const latest = new Map<string, LocationRecord>();
-  records.forEach((item, index) => { const id = item.deviceId || item.id || `location-${index}`; const current = latest.get(id); if (!current || new Date(item.timestamp || 0).getTime() >= new Date(current.timestamp || 0).getTime()) latest.set(id, item); });
-  return [...latest.values()];
-}
-function filterFallbackLocations(records: LocationRecord[], query: { schoolId?: string; deviceId?: string; startDate?: string; endDate?: string; page?: number }): PaginatedLocations {
-  const matching = records.filter(item => (!query.schoolId || item.schoolId === query.schoolId) && (!query.deviceId || item.deviceId === query.deviceId) && (!query.startDate || new Date(item.timestamp || 0) >= new Date(`${query.startDate}T00:00:00`)) && (!query.endDate || new Date(item.timestamp || 0) <= new Date(`${query.endDate}T23:59:59.999`)));
-  return { records: matching, pagination: { page: query.page ?? 1, limit: PAGE_SIZE, total: matching.length, totalPages: Math.ceil(matching.length / PAGE_SIZE) } };
-}
-function paginate(result: PaginatedLocations, page: number, limit: number): PaginatedLocations {
-  const start = (page - 1) * limit;
-  return { records: result.records.slice(start, start + limit), pagination: { page, limit, total: result.records.length, totalPages: Math.ceil(result.records.length / limit) } };
 }
