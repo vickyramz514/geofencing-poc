@@ -76,6 +76,16 @@ function handleRequest(store, request) {
   if (method === 'GET' && path === '/api/office') {
     return json(200, {office: store.office, presence: store.presence});
   }
+  if (method === 'GET' && path === '/api/admin/data') {
+    return json(200, {
+      office: store.office,
+      presence: store.presence,
+      locations: store.locations,
+      events: [...store.events.values()],
+      deliveries: store.deliveries,
+      generatedAt: receivedAt(),
+    });
+  }
   if (method !== 'POST') {
     return json(404, {error: 'Not found'});
   }

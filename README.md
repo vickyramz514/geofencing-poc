@@ -107,6 +107,23 @@ Use a device or an emulator image that includes Google Play services for Android
 
 Selecting a school marker or card shows its address, radius, distance, and delivery status.
 
+## Web admin portal
+
+The separate React admin portal lives in `admin-portal/`. It provides an operations dashboard for stored GPS updates, geofence ENTER/EXIT events, office presence, and delivery status history. It refreshes from the API every 15 seconds and supports event search and CSV export.
+
+Run the API and portal in separate terminals:
+
+```sh
+npm run server
+cd admin-portal
+npm install
+npm run dev
+```
+
+Open the Vite URL shown in the terminal (usually `http://localhost:5173`). The portal defaults to `http://localhost:8787` for its API. Copy `admin-portal/.env.example` to `admin-portal/.env` and set `VITE_API_URL` if the API runs elsewhere. Set the server's `ADMIN_ORIGIN` environment variable to the portal's exact origin when it differs from `http://localhost:5173`.
+
+The portal is separate from the React Native mobile app. It currently displays records the existing API stores; it does not add user/device identity, authentication, or school directory management, since those are not part of this proof-of-concept API's data model.
+
 ## Location uploads
 
 GPS callbacks are not uploaded one by one.

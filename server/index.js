@@ -50,6 +50,15 @@ function saveStore(store) {
 const store = loadStore();
 
 const server = http.createServer((req, res) => {
+  const pathname = (req.url || '/').split('?')[0];
+  res.setHeader('Access-Control-Allow-Origin', process.env.ADMIN_ORIGIN || 'http://localhost:5173');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Idempotency-Key');
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
   const chunks = [];
   let size = 0;
   req.on('data', chunk => {
@@ -80,7 +89,7 @@ const server = http.createServer((req, res) => {
     });
     const result = handleRequest(store, {
       method: req.method,
-      path: (req.url || '/').split('?')[0],
+      path: pathname,
       headers,
       body,
     });
