@@ -44,7 +44,6 @@ const mapIcon = (className: string, text: string) => L.divIcon({
   className: 'map-marker-shell', html: `<span class="${className}">${text}</span>`,
   iconSize: [26, 26], iconAnchor: [13, 13],
 });
-const schoolIcon = mapIcon('school-map-marker', '⌂');
 const latestIcon = mapIcon('latest-map-marker', '⌖');
 const enterIcon = mapIcon('event-map-marker enter-map-marker', '↘');
 const exitIcon = mapIcon('event-map-marker exit-map-marker', '↗');
@@ -57,6 +56,18 @@ function overviewDeviceIcon(name: string) {
     className: 'map-marker-shell named-device-shell',
     html: `<span class="latest-map-marker">⌖</span><span class="overview-device-label" title="${safeName}">${safeName}</span>`,
     iconSize: [220, 30],
+    iconAnchor: [13, 13],
+  });
+}
+function overviewOfficeIcon(name: string) {
+  const replacements: Record<string, string> = {
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  };
+  const safeName = name.replace(/[&<>"']/g, character => replacements[character] ?? character);
+  return L.divIcon({
+    className: 'map-marker-shell overview-office-shell',
+    html: `<span class="overview-office-pin">⌂</span><span class="overview-office-label" title="${safeName}">${safeName}</span>`,
+    iconSize: [240, 32],
     iconAnchor: [13, 13],
   });
 }
@@ -86,9 +97,17 @@ function App() {
   }
   useEffect(() => {
     const controller = new AbortController();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
     void refresh(controller.signal);
-    const timer = window.setInterval(() => void refresh(), 15_000);
-    return () => { controller.abort(); window.clearInterval(timer); };
+    const timer = window.setInterval(refreshWhenVisible, 60_000);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
   }, []);
 
   const locations = useMemo(() => data.locations.slice().sort((a, b) => timeValue(a.timestamp) - timeValue(b.timestamp)), [data.locations]);
@@ -198,7 +217,8 @@ function TrackingMap({ offices, office, locations, deviceLocations, events, late
     <FitMapBounds positions={positions} />
     {fences.map((item, i) => {
       const polygons = polygonSets(item);
-      return <React.Fragment key={item.id || i}>{polygons.length ? polygons.map((polygon, polygonIndex) => <Polygon key={`${item.id}-polygon-${polygonIndex}`} positions={polygon} pathOptions={{ color: '#228467', fillColor: '#42a987', fillOpacity: 0.12, weight: 2 }} />) : Number(item.radiusMeters) > 0 ? <Circle center={[Number(item.latitude), Number(item.longitude)]} radius={Number(item.radiusMeters)} pathOptions={{ color: '#228467', fillColor: '#42a987', fillOpacity: 0.12, weight: 2 }} /> : null}<Marker position={[Number(item.latitude), Number(item.longitude)]} icon={schoolIcon}><Popup><b>{item.name || item.id}</b><br />{polygons.length ? 'Polygon geofence' : `${item.radiusMeters} m radius`}<br />Presence: {item.presence || 'Unknown'}<br />Device: {item.deviceId || 'Not assigned'}</Popup></Marker></React.Fragment>;
+      const officeName = item.name || item.id;
+      return <React.Fragment key={item.id || i}>{polygons.length ? polygons.map((polygon, polygonIndex) => <Polygon key={`${item.id}-polygon-${polygonIndex}`} positions={polygon} pathOptions={{ color: '#16856d', fillColor: '#43b79b', fillOpacity: 0.14, weight: 3, dashArray: '7 5' }} />) : Number(item.radiusMeters) > 0 ? <Circle center={[Number(item.latitude), Number(item.longitude)]} radius={Number(item.radiusMeters)} pathOptions={{ color: '#16856d', fillColor: '#43b79b', fillOpacity: 0.14, weight: 3 }} /> : null}<Marker position={[Number(item.latitude), Number(item.longitude)]} icon={overviewOfficeIcon(officeName)}><Popup><b>{officeName}</b><br />{polygons.length ? 'Polygon geofence' : `${item.radiusMeters} m radius`}<br />Presence: {item.presence || 'Unknown'}<br />Device: {item.deviceId || 'Not assigned'}</Popup></Marker></React.Fragment>;
     })}
     {gps.length > 1 && <Polyline positions={gps.map(item => [Number(item.latitude), Number(item.longitude)] as LatLngExpression)} pathOptions={{ color: '#327ec4', weight: 3, opacity: 0.75 }} />}
     {gps.slice(0, -1).map((point, i) => <CircleMarker key={`gps-${point.timestamp}-${i}`} center={[Number(point.latitude), Number(point.longitude)]} radius={4} pathOptions={{ color: '#fff', weight: 1, fillColor: '#77a9cd', fillOpacity: 0.95 }}><Popup>GPS update<br />{coordinate(point.latitude, point.longitude)}<br />{dateTime(point.timestamp)}</Popup></CircleMarker>)}

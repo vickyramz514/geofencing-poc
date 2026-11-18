@@ -42,6 +42,16 @@ function createDeviceIcon(status: DeviceStatus, label: string) {
   });
 }
 
+function createOfficeIcon(name: string) {
+  const safeName = escapeHtml(name);
+  return L.divIcon({
+    className: 'live-marker-shell office-marker-shell',
+    html: `<div class="office-marker-wrap"><span class="office-map-pin">⌂</span><span class="office-map-label" title="${safeName}">${safeName}</span></div>`,
+    iconSize: [240, 36],
+    iconAnchor: [13, 18],
+  });
+}
+
 export function LiveLocationMap() {
   const [schools, setSchools] = useState<SchoolGeofence[]>([]);
   const [latest, setLatest] = useState<LocationRecord[]>([]);
@@ -84,9 +94,18 @@ export function LiveLocationMap() {
         if (!controller.signal.aborted && active) setLoading(false);
       }
     };
-    void load();
-    const timer = window.setInterval(() => void load(), 15_000);
-    return () => { active = false; controller.abort(); window.clearInterval(timer); };
+    const loadWhenVisible = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    loadWhenVisible();
+    const timer = window.setInterval(loadWhenVisible, 60_000);
+    document.addEventListener('visibilitychange', loadWhenVisible);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', loadWhenVisible);
+    };
   }, [filters.deviceId, filters.endDate, filters.page, filters.schoolId, filters.startDate]);
 
   const located = useMemo(() => latest.filter(hasCoordinates), [latest]);
@@ -164,7 +183,8 @@ export function LiveLocationMap() {
 
 function SchoolShape({ school }: { school: SchoolGeofence }) {
   const polygons = polygonCoordinates(school);
-  return <>{polygons.length ? polygons.map((positions, index) => <Polygon key={`${school.id}-polygon-${index}`} positions={positions} pathOptions={{ color: '#218267', fillColor: '#42a987', fillOpacity: 0.12, weight: 2 }} />) : Number(school.radiusMeters) > 0 ? <Circle center={[Number(school.latitude), Number(school.longitude)]} radius={Number(school.radiusMeters)} pathOptions={{ color: '#218267', fillColor: '#42a987', fillOpacity: 0.12, weight: 2 }} /> : null}<Marker position={[Number(school.latitude), Number(school.longitude)]} icon={L.divIcon({ className: 'live-marker-shell', html: '<span class="school-point-marker">S</span>', iconSize: [24, 24], iconAnchor: [12, 12] })}><Popup><b>{school.name || school.id}</b><br />{polygons.length ? 'Polygon boundary' : `${school.radiusMeters} m geofence`}<br />Presence: {school.presence || 'Unavailable'}</Popup></Marker></>;
+  const name = school.name || school.id;
+  return <>{polygons.length ? polygons.map((positions, index) => <Polygon key={`${school.id}-polygon-${index}`} positions={positions} pathOptions={{ color: '#16856d', fillColor: '#43b79b', fillOpacity: 0.15, weight: 3, dashArray: '7 5' }} />) : Number(school.radiusMeters) > 0 ? <Circle center={[Number(school.latitude), Number(school.longitude)]} radius={Number(school.radiusMeters)} pathOptions={{ color: '#16856d', fillColor: '#43b79b', fillOpacity: 0.14, weight: 3 }} /> : null}<Marker position={[Number(school.latitude), Number(school.longitude)]} icon={createOfficeIcon(name)}><Popup><b>{name}</b><br />{polygons.length ? 'Polygon boundary' : `${school.radiusMeters} m geofence`}<br />Presence: {school.presence || 'Unavailable'}</Popup></Marker></>;
 }
 
 function MapControls({ positions, onReady }: { positions: LatLngExpression[]; onReady: (controller: MapController) => void }) {

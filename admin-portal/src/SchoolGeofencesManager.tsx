@@ -124,7 +124,7 @@ export function SchoolGeofencesManager() {
   };
 
   const removeOffice = async (office: SchoolGeofence) => {
-    if (!window.confirm(`Delete office "${office.name || office.id}"? This permanently removes it when it has no event or delivery history.`)) return;
+    if (!window.confirm(`Delete office "${office.name || office.id}" and permanently remove its linked geofence events and delivery assignments?`)) return;
     setSaving(true);
     setError('');
     try {
