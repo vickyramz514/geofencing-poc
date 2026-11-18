@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import L, { type LatLngExpression, type Map as LeafletMap } from 'leaflet';
 import { Circle, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer, useMap } from 'react-leaflet';
-import { fetchDeviceLocation, fetchLatestLocations, fetchLocationHistory, fetchSchools } from './api';
-import type { LocationRecord, PaginatedLocations, SchoolGeofence } from './api';
+import { fetchDeviceLocation, fetchDevices, fetchLatestLocations, fetchLocationHistory, fetchSchools } from './api';
+import type { DeviceRecord, LocationRecord, PaginatedLocations, SchoolGeofence } from './api';
 
 const PAGE_SIZE = 100;
 const STALE_AFTER_MS = 5 * 60 * 1000;
@@ -55,6 +55,7 @@ function createOfficeIcon(name: string) {
 export function LiveLocationMap() {
   const [schools, setSchools] = useState<SchoolGeofence[]>([]);
   const [latest, setLatest] = useState<LocationRecord[]>([]);
+  const [registeredDevices, setRegisteredDevices] = useState<DeviceRecord[]>([]);
   const [history, setHistory] = useState<PaginatedLocations>(emptyHistory);
   const [filters, setFilters] = useState<MapFilters>({ schoolId: '', deviceId: '', status: 'ALL', startDate: '', endDate: '', page: 1 });
   const [loading, setLoading] = useState(true);
@@ -78,15 +79,23 @@ export function LiveLocationMap() {
     const load = async () => {
       setLoading(true);
       try {
-        const [schoolResult, latestResult, historyResult] = await Promise.all([
+        const [schoolResult, latestResult, historyResult, firstDevicePage] = await Promise.all([
           fetchSchools({ page: 1, limit: 100 }, controller.signal),
           fetchLatestLocations({ schoolId: query.schoolId, deviceId: query.deviceId, limit: PAGE_SIZE }, controller.signal),
           fetchLocationHistory(query, controller.signal),
+          fetchDevices({ page: 1, limit: 100 }, controller.signal),
         ]);
+        const registered = [...firstDevicePage.records];
+        const devicePages = firstDevicePage.pagination.totalPages ?? 1;
+        for (let devicePage = 2; devicePage <= devicePages; devicePage += 1) {
+          const result = await fetchDevices({ page: devicePage, limit: 100 }, controller.signal);
+          registered.push(...result.records);
+        }
         if (controller.signal.aborted || !active) return;
         setSchools(schoolResult.records);
         setLatest(latestResult.records);
         setHistory(historyResult);
+        setRegisteredDevices(registered);
         setError('');
       } catch (cause) {
         if (!controller.signal.aborted && active) setError(cause instanceof Error ? cause.message : 'Could not load live location data.');
@@ -147,7 +156,7 @@ export function LiveLocationMap() {
     {error && <div className="map-error"><b>Location data unavailable</b><span>{error}</span></div>}
     <div className="live-map-filters">
       <label>School<select value={filters.schoolId} onChange={event => setFilter('schoolId', event.target.value)}><option value="">All schools</option>{schools.map(school => <option key={school.id} value={school.id}>{school.name || school.id}</option>)}</select></label>
-      <label>Device<select value={filters.deviceId ?? ''} onChange={event => setFilter('deviceId', event.target.value)}><option value="">All devices</option>{devices.filter(item => item.deviceId).map(item => <option key={item.deviceId} value={item.deviceId ?? ''}>{item.deviceName || item.deviceId}</option>)}</select></label>
+      <label>Device<select value={filters.deviceId ?? ''} onChange={event => setFilter('deviceId', event.target.value)}><option value="">All devices</option>{registeredDevices.map(item => <option key={item.deviceId} value={item.deviceId}>{item.deviceName || item.deviceId}</option>)}</select></label>
       <label>Status<select value={filters.status} onChange={event => setFilter('status', event.target.value)}><option value="ALL">All statuses</option><option value="INSIDE">Inside</option><option value="OUTSIDE">Outside</option><option value="STALE">Stale</option><option value="UNAVAILABLE">Unavailable</option></select></label>
       <label>History from<input type="date" value={filters.startDate} onChange={event => setFilter('startDate', event.target.value)} /></label>
       <label>History to<input type="date" value={filters.endDate} onChange={event => setFilter('endDate', event.target.value)} /></label>

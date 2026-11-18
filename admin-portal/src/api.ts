@@ -54,6 +54,7 @@ export interface DeliveryRecord {
 
 export interface DeviceRecord {
   deviceId: string;
+  deviceName?: string | null;
   platform?: string;
   appVersion?: string | null;
   status?: string;
@@ -459,6 +460,11 @@ export async function setDeviceActive(deviceId: string, active: boolean): Promis
     method: 'PATCH', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ active }),
   });
   return await readEnvelope(response).then(envelope => envelope.data as DeviceRecord);
+}
+
+export async function deleteDevice(deviceId: string): Promise<void> {
+  const response = await adminFetch(deviceEndpoint(`/${encodeURIComponent(deviceId)}`), { method: 'DELETE', headers: { Accept: 'application/json' } });
+  await readEnvelope(response);
 }
 
 export async function fetchGeofenceEvents(query: GeofenceEventQuery = {}, signal?: AbortSignal) {
