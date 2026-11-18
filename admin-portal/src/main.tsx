@@ -48,6 +48,18 @@ const schoolIcon = mapIcon('school-map-marker', '⌂');
 const latestIcon = mapIcon('latest-map-marker', '⌖');
 const enterIcon = mapIcon('event-map-marker enter-map-marker', '↘');
 const exitIcon = mapIcon('event-map-marker exit-map-marker', '↗');
+function overviewDeviceIcon(name: string) {
+  const replacements: Record<string, string> = {
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  };
+  const safeName = name.replace(/[&<>"']/g, character => replacements[character] ?? character);
+  return L.divIcon({
+    className: 'map-marker-shell named-device-shell',
+    html: `<span class="latest-map-marker">⌖</span><span class="overview-device-label" title="${safeName}">${safeName}</span>`,
+    iconSize: [220, 30],
+    iconAnchor: [13, 13],
+  });
+}
 
 function App() {
   const [data, setData] = useState<AdminData>(EMPTY_DATA);
@@ -145,7 +157,7 @@ function Overview({ data, latest, todayEvents, presentCount, locations, onOpen }
       <Stat title="Latest GPS updates" value={data.dashboard.latestGpsLocations.pagination.total ?? data.dashboard.latestGpsLocations.records.length} note={latest ? timeAgo(latest.timestamp) : 'No GPS updates received'} icon="⌖" tone="blue" badge="LATEST" />
     </div>
     <div className="dashboard-grid">
-      <section className="panel map-panel"><PanelHeader title="Live geofence map" subtitle="GPS history, office fences, and event locations" action="Open map" onAction={() => onOpen('Live GPS map')} /><TrackingMap offices={data.offices} office={data.office} locations={locations} events={data.events} latest={latest} /><MapLegend /></section>
+      <section className="panel map-panel"><PanelHeader title="Live geofence map" subtitle="Latest location for each device, office fences, and event locations" action="Open map" onAction={() => onOpen('Live GPS map')} /><TrackingMap offices={data.offices} office={data.office} locations={locations} deviceLocations={data.dashboard.latestGpsLocations.records} events={data.events} latest={latest} /><MapLegend /></section>
       <section className="panel activity-panel"><PanelHeader title="Geofence activity" subtitle="Recent events from the current history page" /><ActivityChart events={todayEvents} /><div className="activity-summary"><span className="activity-key"><i className="enter-key" />Today's entries (UTC)</span><b>{metrics.todaysEntryEvents}</b><span className="activity-key"><i className="exit-key" />Today's exits (UTC)</span><b>{metrics.todaysExitEvents}</b></div></section>
     </div>
     <div className="lower-grid"><section className="panel"><PanelHeader title="Office geofences" subtitle="Configured locations and presence" action="Manage" onAction={() => onOpen('Office geofences')} />{data.offices.length ? <OfficeList offices={data.offices.slice(0, 4)} /> : <EmptyState loaded title="No office geofences returned" detail="The API returned no configured office locations." />}</section><section className="panel"><PanelHeader title="Recent geofence events" subtitle="Latest entry and exit activity" action="View all" onAction={() => onOpen('Geofence events')} />{data.events.length ? <EventsTable events={data.events.slice().reverse().slice(0, 4)} /> : <EmptyState loaded title="No geofence events" detail="Entry and exit events will appear when reported by the API." />}</section></div>
@@ -163,12 +175,21 @@ function ReportsPage({ data, fromDate, toDate, setFromDate, setToDate, onExport 
   return <><section className="panel page-panel"><PanelHeader title="Reports" subtitle="Filter available API records by date and export a combined CSV" action="Download report" onAction={onExport} /><DateRange fromDate={fromDate} toDate={toDate} setFromDate={setFromDate} setToDate={setToDate} /><div className="stat-grid report-stats"><Stat title="Location records" value={locationCount} note="In selected date range" icon="⌖" tone="blue" badge="DATA" /><Stat title="Geofence events" value={eventCount} note="In selected date range" icon="◎" tone="violet" badge="DATA" /><Stat title="Delivery updates" value={deliveryCount} note="In selected date range" icon="↗" tone="amber" badge="DATA" /><Stat title="Office geofences" value={data.offices.length} note="Current configured total" icon="⌂" tone="green" badge="CURRENT" /></div><p className="api-readonly-note">The report includes records currently returned by the API. A response with pagination may contain only the current page; totals are shown in the relevant history views.</p></section></>;
 }
 
-function TrackingMap({ offices, office, locations, events, latest }: { offices: SchoolGeofence[]; office: AdminData['office']; locations: LocationRecord[]; events: GeofenceEvent[]; latest?: LocationRecord }) {
+function TrackingMap({ offices, office, locations, deviceLocations, events, latest }: { offices: SchoolGeofence[]; office: AdminData['office']; locations: LocationRecord[]; deviceLocations: LocationRecord[]; events: GeofenceEvent[]; latest?: LocationRecord }) {
   const gps = locations.filter(validCoordinates).slice(-250);
+  const latestByDevice = new Map<string, LocationRecord>();
+  [...locations, ...deviceLocations].filter(item => item.deviceId && validCoordinates(item)).forEach(item => {
+    const id = item.deviceId!;
+    const prior = latestByDevice.get(id);
+    const itemTime = item.timestamp ? new Date(item.timestamp).getTime() : 0;
+    const priorTime = prior?.timestamp ? new Date(prior.timestamp).getTime() : 0;
+    if (!prior || itemTime >= priorTime) latestByDevice.set(id, item);
+  });
+  const currentDevices = [...latestByDevice.values()];
   const fences = offices.filter(validCoordinates);
   if (office && validCoordinates(office)) fences.push({ ...office, id: 'office', name: 'Office area' });
   const eventPoints = events.filter(validCoordinates);
-  const positions: LatLngExpression[] = [...gps, ...fences, ...eventPoints].map(point => [Number(point.latitude), Number(point.longitude)]);
+  const positions: LatLngExpression[] = [...gps, ...currentDevices, ...fences, ...eventPoints].map(point => [Number(point.latitude), Number(point.longitude)]);
   if (!positions.length) return <div className="map-canvas map-empty">The API has no GPS, office, or event coordinates to map.</div>;
   const anchor = latest && validCoordinates(latest) ? latest : fences[0] ?? gps[0] ?? eventPoints[0];
   const center: LatLngExpression = [Number(anchor.latitude), Number(anchor.longitude)];
@@ -181,7 +202,13 @@ function TrackingMap({ offices, office, locations, events, latest }: { offices: 
     })}
     {gps.length > 1 && <Polyline positions={gps.map(item => [Number(item.latitude), Number(item.longitude)] as LatLngExpression)} pathOptions={{ color: '#327ec4', weight: 3, opacity: 0.75 }} />}
     {gps.slice(0, -1).map((point, i) => <CircleMarker key={`gps-${point.timestamp}-${i}`} center={[Number(point.latitude), Number(point.longitude)]} radius={4} pathOptions={{ color: '#fff', weight: 1, fillColor: '#77a9cd', fillOpacity: 0.95 }}><Popup>GPS update<br />{coordinate(point.latitude, point.longitude)}<br />{dateTime(point.timestamp)}</Popup></CircleMarker>)}
-    {latest && validCoordinates(latest) && <Marker position={[Number(latest.latitude), Number(latest.longitude)]} icon={latestIcon}><Popup><b>Latest GPS fix</b><br />{coordinate(latest.latitude, latest.longitude)}<br />Accuracy: ±{latest.accuracy ?? latest.accuracyMeters ?? '—'} m<br />{dateTime(latest.timestamp)}<br />Device: {latest.deviceId || 'Not provided'}</Popup></Marker>}
+    {currentDevices.map(item => {
+      const label = item.deviceName || item.deviceId || 'Unknown device';
+      return <Marker key={`device-${item.deviceId}`} position={[Number(item.latitude), Number(item.longitude)]} icon={overviewDeviceIcon(label)}>
+        <Popup><b>{label}</b><br />Device ID: {item.deviceId}<br />{coordinate(item.latitude, item.longitude)}<br />Accuracy: ±{item.accuracy ?? item.accuracyMeters ?? '—'} m<br />{dateTime(item.timestamp)}<br />Status: {item.status || 'Unavailable'}</Popup>
+      </Marker>;
+    })}
+    {!currentDevices.length && latest && validCoordinates(latest) && <Marker position={[Number(latest.latitude), Number(latest.longitude)]} icon={latestIcon}><Popup><b>Latest GPS fix</b><br />{coordinate(latest.latitude, latest.longitude)}<br />Accuracy: ±{latest.accuracy ?? latest.accuracyMeters ?? '—'} m<br />{dateTime(latest.timestamp)}</Popup></Marker>}
     {eventPoints.map((item, i) => <Marker key={item.eventId || `event-${i}`} position={[Number(item.latitude), Number(item.longitude)]} icon={item.eventType === 'ENTER' ? enterIcon : exitIcon}><Popup><b>{item.eventType || 'Geofence event'} · {item.schoolName || item.schoolId}</b><br />{coordinate(item.latitude, item.longitude)}<br />{dateTime(item.eventTime)}</Popup></Marker>)}
   </MapContainer></div>;
 }

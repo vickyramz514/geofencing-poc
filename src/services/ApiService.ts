@@ -79,6 +79,20 @@ export function createFetchApiClient(
 ): ApiClient {
   const root = baseUrl.replace(/\/$/, '').replace(/\/api$/i, '');
 
+  async function fetchWithTimeout(path: string, input: string, init: RequestInit) {
+    let timeout: ReturnType<typeof setTimeout>;
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => {
+        reject(new Error(`Request to ${path} timed out after 10 seconds. Check that the API is running and reachable.`));
+      }, 10_000);
+    });
+    try {
+      return await Promise.race([fetchImpl(input, init), timeoutPromise]);
+    } finally {
+      clearTimeout(timeout!);
+    }
+  }
+
   async function postJson(
     path: string,
     body: unknown,
@@ -96,7 +110,7 @@ export function createFetchApiClient(
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = await fetchImpl(`${root}${path}`, {
+    const response = await fetchWithTimeout(path, `${root}${path}`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -110,7 +124,7 @@ export function createFetchApiClient(
 
   async function getOffice(): Promise<OfficeLocation | null> {
     const token = getAuthToken ? await getAuthToken() : null;
-    const response = await fetchImpl(`${root}/api/office`, {
+    const response = await fetchWithTimeout('/api/office', `${root}/api/office`, {
       method: 'GET',
       headers: {
         Accept: 'application/json',

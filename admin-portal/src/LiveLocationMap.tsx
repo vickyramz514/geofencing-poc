@@ -15,14 +15,31 @@ const dateTime = (value?: string) => value && !Number.isNaN(new Date(value).getT
   : 'Unavailable';
 const coordinate = (lat: number, lon: number) => `${Number(lat).toFixed(6)}, ${Number(lon).toFixed(6)}`;
 
-function createDeviceIcon(status: DeviceStatus) {
+function escapeHtml(value: string): string {
+  const replacements: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  };
+  return value.replace(/[&<>"']/g, character => replacements[character] ?? character);
+}
+
+function createDeviceIcon(status: DeviceStatus, label: string) {
   const classes: Record<DeviceStatus, string> = {
     INSIDE: 'device-marker inside',
     OUTSIDE: 'device-marker outside',
     STALE: 'device-marker stale',
     UNAVAILABLE: 'device-marker unavailable',
   };
-  return L.divIcon({ className: 'live-marker-shell', html: `<span class="${classes[status]}">⌖</span>`, iconSize: [30, 30], iconAnchor: [15, 15] });
+  const safeLabel = escapeHtml(label);
+  return L.divIcon({
+    className: 'live-marker-shell',
+    html: `<div class="device-marker-wrap"><span class="${classes[status]}">⌖</span><span class="device-marker-label" title="${safeLabel}">${safeLabel}</span></div>`,
+    iconSize: [220, 34],
+    iconAnchor: [15, 17],
+  });
 }
 
 export function LiveLocationMap() {
@@ -128,7 +145,8 @@ export function LiveLocationMap() {
           const status = statusByDevice.get(id) ?? 'UNAVAILABLE';
           const detail = item.deviceId ? details[item.deviceId] : undefined;
           const school = schools.find(candidate => candidate.id === (detail?.schoolId || item.schoolId));
-          return <Marker key={id} position={[Number(item.latitude), Number(item.longitude)]} icon={createDeviceIcon(status)} eventHandlers={{ click: () => void lookupDevice(item) }}>
+          const deviceName = detail?.deviceName || item.deviceName || item.deviceId || 'Unknown device';
+          return <Marker key={id} position={[Number(item.latitude), Number(item.longitude)]} icon={createDeviceIcon(status, deviceName)} eventHandlers={{ click: () => void lookupDevice(item) }}>
             <Popup><div className="device-popup"><b>Device {item.deviceId || 'ID unavailable'}</b>{(detail?.deviceName || item.deviceName) && <small className="device-name">{detail?.deviceName || item.deviceName}</small>}<span className={`device-status ${status.toLowerCase()}`}>{status}</span><dl><dt>School</dt><dd>{detail?.schoolName || item.schoolName || school?.name || school?.id || 'Unavailable'}</dd><dt>Latitude</dt><dd>{Number(detail?.latitude ?? item.latitude).toFixed(6)}</dd><dt>Longitude</dt><dd>{Number(detail?.longitude ?? item.longitude).toFixed(6)}</dd><dt>GPS accuracy</dt><dd>{detail?.accuracy ?? detail?.accuracyMeters ?? item.accuracy ?? item.accuracyMeters ?? 'Unavailable'} m</dd><dt>Last updated</dt><dd>{dateTime(detail?.timestamp || item.timestamp)}</dd></dl>{item.deviceId && detailErrors[item.deviceId] && <small className="popup-note">Device detail endpoint unavailable; showing latest-location response.</small>}</div></Popup>
           </Marker>;
         })}

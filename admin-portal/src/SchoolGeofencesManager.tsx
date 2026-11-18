@@ -3,7 +3,7 @@ import L, { type LatLngExpression } from 'leaflet';
 import { Circle, MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
-import { createSchool, fetchSchool, fetchSchools, updateSchool } from './api';
+import { createSchool, deleteOffice, fetchSchool, fetchSchools, updateSchool } from './api';
 import type { SchoolGeofence, SchoolGeofenceInput } from './api';
 
 const PAGE_LIMIT = 10;
@@ -123,6 +123,21 @@ export function SchoolGeofencesManager() {
     }
   };
 
+  const removeOffice = async (office: SchoolGeofence) => {
+    if (!window.confirm(`Delete office "${office.name || office.id}"? This permanently removes it when it has no event or delivery history.`)) return;
+    setSaving(true);
+    setError('');
+    try {
+      await deleteOffice(office.id);
+      await loadSchools();
+      setNotice(`${office.name || office.id} deleted.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not delete office.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const mapFallback = useMemo(() => schools.find(isLocated), [schools]);
   const closeEditor = () => { setEditorOpen(false); setEditing(null); setValidation([]); };
 
@@ -153,7 +168,7 @@ export function SchoolGeofencesManager() {
       <div className="panel-header"><div><h2>Office geofence management</h2><p>{total} configured office{total === 1 ? '' : 's'} · search, configure, and preview boundaries</p></div><button className="button primary" onClick={openCreate}>＋ Create office</button></div>
       <div className="school-list-controls"><label className="search"><span>⌕</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search offices by name or ID" /></label><button className="button secondary" onClick={() => void loadSchools()}>⟳ Refresh</button></div>
       {error && <div className="school-form-error"><b>Could not load schools</b><span>{error}</span></div>}
-      {loading ? <div className="empty-state"><div className="spinner"/><b>Loading office geofences</b><span>Fetching offices from the admin API.</span></div> : schools.length ? <div className="school-table-wrap"><table className="school-table"><thead><tr><th>OFFICE</th><th>BOUNDARY</th><th>ASSIGNED DEVICES</th><th>PRESENCE</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>{schools.map(school => <tr key={school.id}><td><div className="school-table-name"><b>{school.name || school.id}</b><small>{school.id} · {formatCoordinate(school.latitude)}, {formatCoordinate(school.longitude)}</small></div></td><td><span className="boundary-kind">{isPolygon(school) ? 'Polygon' : 'Circle · ' + (school.radiusMeters || 0) + 'm'}</span></td><td><AssignedDevices devices={deviceLabels(school)} compact /></td><td><span className={`presence-pill ${['PRESENT', 'INSIDE'].includes(String(school.presence).toUpperCase()) ? 'present' : ''}`}>{school.presence || 'UNKNOWN'}</span></td><td><button className={`status-toggle ${school.enabled ? 'enabled' : ''}`} disabled={saving} onClick={() => void toggleEnabled(school)} aria-label={`${school.enabled ? 'Disable' : 'Enable'} ${school.name || school.id}`}><span/>{school.enabled ? 'Enabled' : 'Disabled'}</button></td><td><button className="table-action" disabled={saving} onClick={() => void openEdit(school)}>Edit</button></td></tr>)}</tbody></table></div> : <div className="empty-state"><div className="empty-icon">⌂</div><b>{searchTerm ? 'No offices match this search' : 'No office geofences yet'}</b><span>{searchTerm ? 'Try another office name or identifier.' : 'Create an office geofence to start monitoring this location.'}</span></div>}
+      {loading ? <div className="empty-state"><div className="spinner"/><b>Loading office geofences</b><span>Fetching offices from the admin API.</span></div> : schools.length ? <div className="school-table-wrap"><table className="school-table"><thead><tr><th>OFFICE</th><th>BOUNDARY</th><th>ASSIGNED DEVICES</th><th>PRESENCE</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>{schools.map(school => <tr key={school.id}><td><div className="school-table-name"><b>{school.name || school.id}</b><small>{school.id} · {formatCoordinate(school.latitude)}, {formatCoordinate(school.longitude)}</small></div></td><td><span className="boundary-kind">{isPolygon(school) ? 'Polygon' : 'Circle · ' + (school.radiusMeters || 0) + 'm'}</span></td><td><AssignedDevices devices={deviceLabels(school)} compact /></td><td><span className={`presence-pill ${['PRESENT', 'INSIDE'].includes(String(school.presence).toUpperCase()) ? 'present' : ''}`}>{school.presence || 'UNKNOWN'}</span></td><td><button className={`status-toggle ${school.enabled ? 'enabled' : ''}`} disabled={saving} onClick={() => void toggleEnabled(school)} aria-label={`${school.enabled ? 'Disable' : 'Enable'} ${school.name || school.id}`}><span/>{school.enabled ? 'Enabled' : 'Disabled'}</button></td><td><button className="table-action" disabled={saving} onClick={() => void openEdit(school)}>Edit</button><button className="table-action" disabled={saving} onClick={() => void removeOffice(school)}>Delete</button></td></tr>)}</tbody></table></div> : <div className="empty-state"><div className="empty-icon">⌂</div><b>{searchTerm ? 'No offices match this search' : 'No office geofences yet'}</b><span>{searchTerm ? 'Try another office name or identifier.' : 'Create an office geofence to start monitoring this location.'}</span></div>}
       <div className="school-pagination"><small>Showing {schools.length ? (page - 1) * PAGE_LIMIT + 1 : 0}–{Math.min(page * PAGE_LIMIT, total)} of {total}</small><div><button disabled={page <= 1 || loading} onClick={() => setPage(current => current - 1)}>Previous</button><span>Page {page} of {Math.max(totalPages, 1)}</span><button disabled={page >= totalPages || loading} onClick={() => setPage(current => current + 1)}>Next</button></div></div>
     </section>}
   </>;

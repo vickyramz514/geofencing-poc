@@ -356,6 +356,15 @@ export async function deleteSchool(id: string): Promise<void> {
   }
 }
 
+export async function deleteOffice(id: string): Promise<void> {
+  const response = await adminFetch(`${adminApiRoot}/offices/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { Accept: 'application/json' } });
+  const envelope = (await response.json().catch(() => ({}))) as ApiEnvelope;
+  if (!response.ok || envelope.success === false) {
+    const error = typeof envelope.error === 'object' && envelope.error ? envelope.error.message : envelope.error;
+    throw Object.assign(new Error(String(error || envelope.message || `Office API returned ${response.status}`)), { status: response.status });
+  }
+}
+
 function locationRecords(payload: unknown): PaginatedLocations {
   const records = getRecords<Record<string, unknown>>(payload).map(normalizeLocation);
   return { records, pagination: getPage(payload, records.length) };
