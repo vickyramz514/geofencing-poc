@@ -88,6 +88,15 @@ function handleRequest(store, request) {
       generatedAt: receivedAt(),
     });
   }
+  if (method === 'DELETE' && path === '/api/admin/locations/history') {
+    const deletedCount = store.locations.length;
+    store.locations = [];
+    store.devices.forEach(device => {
+      delete device.latestGpsLocation;
+      delete device.lastSeenAt;
+    });
+    return json(200, {success: true, data: {deletedCount}});
+  }
   if (method !== 'POST') {
     return json(404, {error: 'Not found'});
   }

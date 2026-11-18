@@ -398,6 +398,19 @@ export async function fetchLocationHistory(query: LocationQuery = {}, signal?: A
   return locationRecords(await requestJson(endpointUrl('/history', query), signal));
 }
 
+export async function clearLocationHistory(): Promise<number | null> {
+  const response = await adminFetch(`${adminApiRoot}/locations/history`, {
+    method: 'DELETE',
+    headers: { Accept: 'application/json' },
+  });
+  const envelope = await readEnvelope(response);
+  const payload = envelope.data && typeof envelope.data === 'object'
+    ? envelope.data as Record<string, unknown>
+    : envelope;
+  const deletedCount = payload.deletedCount ?? envelope.deletedCount;
+  return typeof deletedCount === 'number' ? deletedCount : null;
+}
+
 export async function fetchDeviceLocation(deviceId: string, signal?: AbortSignal): Promise<LocationRecord> {
   const device = await requestJson(deviceEndpoint(`/${encodeURIComponent(deviceId)}`), signal) as Record<string, unknown>;
   const location = device.latestGpsLocation;
