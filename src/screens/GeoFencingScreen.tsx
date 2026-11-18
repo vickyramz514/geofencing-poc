@@ -1,12 +1,14 @@
-import {StatusBar, StyleSheet, Text, View} from 'react-native';
-import {useEffect, useRef} from 'react';
+import {Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, View} from 'react-native';
+import {useEffect, useMemo, useRef, useState} from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {SchoolMap} from '../components/SchoolMap';
 import {TrackingControls} from '../components/TrackingControls';
 import {OFFICE_ID, OFFICE_NAME} from '../data/office';
 import {useDeliveryTracking} from '../hooks/useDeliveryTracking';
+import {createAppServices} from '../services/createAppServices';
 import {colors, spacing} from '../theme';
-import type {Presence, School} from '../types';
+import type {OfficeLocation, Presence, School} from '../types';
 import {formatCoordinate, formatDistance} from '../utils/format';
 
 function presenceCopy(presence: Presence | 'unknown', hasOffice: boolean, tracking: boolean): string {
@@ -19,18 +21,53 @@ function presenceCopy(presence: Presence | 'unknown', hasOffice: boolean, tracki
   return 'You are inside the office area.';
 }
 
+const SELECTED_OFFICE_KEY = 'geofence.selected-office.v1';
+
 export function GeoFencingScreen({deviceId, deviceName, registrationNotice}: {deviceId: string; deviceName: string; registrationNotice?: string}) {
   const tracking = useDeliveryTracking({deviceId, deviceName});
+  const api = useMemo(() => createAppServices().api, []);
+  const [offices, setOffices] = useState<OfficeLocation[]>([]);
+  const [selectedOfficeId, setSelectedOfficeId] = useState<string | null>(null);
+  const [officePickerOpen, setOfficePickerOpen] = useState(false);
+  const [officeLoadError, setOfficeLoadError] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   const startedAutomatically = useRef(false);
   useEffect(() => {
-    if (startedAutomatically.current) return;
+    let active = true;
+    api.getOffices().then(async available => {
+      let choices = available;
+      if (!choices.length) {
+        const fallback = await api.getOffice();
+        if (fallback) choices = [fallback];
+      }
+      if (!active) return;
+      setOffices(choices);
+      const savedId = await AsyncStorage.getItem(SELECTED_OFFICE_KEY).catch(() => null);
+      const selected = choices.find(office => office.id === savedId) || choices[0];
+      setSelectedOfficeId(selected?.id || null);
+      setOfficeLoadError(choices.length ? null : 'No active offices are available.');
+    }).catch(cause => {
+      if (active) setOfficeLoadError(cause instanceof Error ? cause.message : 'Could not load offices.');
+    });
+    return () => { active = false; };
+  }, [api]);
+  useEffect(() => {
+    if (startedAutomatically.current || !selectedOfficeId) return;
     startedAutomatically.current = true;
-    tracking.startTracking().catch(() => undefined);
-  }, [tracking.startTracking]);
+    tracking.startTracking(selectedOfficeId).catch(() => undefined);
+  }, [selectedOfficeId, tracking.startTracking]);
+  const selectOffice = (office: OfficeLocation) => {
+    setOfficePickerOpen(false);
+    if (office.id === selectedOfficeId || tracking.trackingStatus === 'starting') return;
+    setSelectedOfficeId(office.id || null);
+    if (office.id) {
+      AsyncStorage.setItem(SELECTED_OFFICE_KEY, office.id).catch(() => undefined);
+      tracking.switchOffice(office.id).catch(() => undefined);
+    }
+  };
   const officeSchool: School | null = tracking.office
     ? {
-        id: OFFICE_ID,
+        id: tracking.office.schoolId,
         name: tracking.officeName || OFFICE_NAME,
         address: 'Configured office location',
         latitude: tracking.office.latitude,
@@ -60,7 +97,7 @@ export function GeoFencingScreen({deviceId, deviceName, registrationNotice}: {de
             : []
         }
         location={tracking.location}
-        selectedSchoolId={OFFICE_ID}
+        selectedSchoolId={officeSchool?.id || OFFICE_ID}
         tracking={trackingOn}
         focus={tracking.office}
         fenceRadiusMeters={tracking.radiusMeters}
@@ -69,8 +106,12 @@ export function GeoFencingScreen({deviceId, deviceName, registrationNotice}: {de
 
       <SafeAreaView style={styles.overlay} edges={['top', 'left', 'right']} pointerEvents="box-none">
         <View style={styles.top} pointerEvents="box-none">
-          <View pointerEvents="none" style={styles.details}>
+          <View pointerEvents="box-none" style={styles.details}>
             <Text style={styles.deviceName}>{deviceName}</Text>
+            <Pressable accessibilityRole="button" onPress={() => setOfficePickerOpen(true)} style={styles.officePickerButton}>
+              <Text style={styles.officePickerLabel}>OFFICE</Text>
+              <Text style={styles.officePickerName}>{tracking.officeName || offices.find(item => item.id === selectedOfficeId)?.name || 'Choose an office'}⌄</Text>
+            </Pressable>
             <Text style={styles.coords}>
               {formatCoordinate(tracking.location?.latitude)},{' '}
               {formatCoordinate(tracking.location?.longitude)}
@@ -100,6 +141,9 @@ export function GeoFencingScreen({deviceId, deviceName, registrationNotice}: {de
       </SafeAreaView>
 
       <View style={[styles.bottom, {paddingBottom: Math.max(insets.bottom, spacing.md)}]} pointerEvents="box-none">
+        {officeLoadError && !offices.length ? (
+          <View style={styles.bannerDanger}><Text style={styles.bannerBody}>{officeLoadError}</Text></View>
+        ) : null}
         {registrationNotice ? (
           <View style={styles.bannerInfo}>
             <Text style={styles.bannerBody}>{registrationNotice}</Text>
@@ -126,11 +170,32 @@ export function GeoFencingScreen({deviceId, deviceName, registrationNotice}: {de
           tracking={trackingOn}
           starting={tracking.trackingStatus === 'starting'}
           onStart={() => {
-            tracking.startTracking().catch(() => undefined);
+            tracking.startTracking(selectedOfficeId || undefined).catch(() => undefined);
           }}
           onStop={tracking.stopTracking}
         />
       </View>
+      <Modal visible={officePickerOpen} transparent animationType="fade" onRequestClose={() => setOfficePickerOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setOfficePickerOpen(false)}>
+          <Pressable style={styles.officePickerModal} onPress={() => undefined}>
+            <Text style={styles.officePickerTitle}>Choose an office</Text>
+            <Text style={styles.officePickerHint}>Tracking and geofence alerts will use this office.</Text>
+            <ScrollView style={styles.officeList}>
+              {offices.map(office => (
+                <Pressable key={office.id} onPress={() => selectOffice(office)} style={styles.officeOption}>
+                  <View style={styles.officeOptionCopy}>
+                    <Text style={styles.officeOptionName}>{office.name || 'Office'}</Text>
+                    <Text style={styles.officeOptionMeta}>{office.radiusMeters} m geofence</Text>
+                  </View>
+                  {office.id === selectedOfficeId ? <Text style={styles.officeOptionSelected}>Selected</Text> : null}
+                </Pressable>
+              ))}
+              {!offices.length ? <Text style={styles.officePickerHint}>{officeLoadError || 'Loading offices…'}</Text> : null}
+            </ScrollView>
+            <Pressable onPress={() => setOfficePickerOpen(false)} style={styles.officePickerClose}><Text style={styles.officePickerCloseText}>Close</Text></Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -165,6 +230,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  officePickerButton: {
+    alignSelf: 'flex-start',
+    minWidth: 180,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    gap: 2,
+  },
+  officePickerLabel: {color: colors.primary, fontSize: 9, fontWeight: '800', letterSpacing: 1},
+  officePickerName: {color: colors.text, fontSize: 13, fontWeight: '700'},
+  modalBackdrop: {flex: 1, justifyContent: 'center', backgroundColor: 'rgba(18, 31, 42, 0.42)', padding: spacing.lg},
+  officePickerModal: {maxHeight: '75%', borderRadius: 20, backgroundColor: colors.white, padding: spacing.lg, gap: spacing.sm},
+  officePickerTitle: {color: colors.text, fontSize: 20, fontWeight: '800'},
+  officePickerHint: {color: colors.muted, fontSize: 13, lineHeight: 18},
+  officeList: {flexGrow: 0, marginTop: spacing.sm},
+  officeOption: {minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E4E9EE', paddingVertical: spacing.sm},
+  officeOptionCopy: {gap: 3, flex: 1},
+  officeOptionName: {color: colors.text, fontSize: 15, fontWeight: '700'},
+  officeOptionMeta: {color: colors.muted, fontSize: 12},
+  officeOptionSelected: {color: colors.primary, fontSize: 12, fontWeight: '800'},
+  officePickerClose: {alignItems: 'center', paddingVertical: spacing.sm},
+  officePickerCloseText: {color: colors.primary, fontSize: 15, fontWeight: '700'},
   deviceName: {
     alignSelf: 'flex-start',
     color: colors.text,

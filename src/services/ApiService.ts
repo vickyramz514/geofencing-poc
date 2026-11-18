@@ -12,7 +12,8 @@ import type {
 export interface ApiClient {
   registerDevice(body: DeviceRegistrationPayload): Promise<ApiReceipt>;
   getRegisteredDevice(deviceId: string): Promise<RegisteredDevice | null>;
-  getOffice(): Promise<OfficeLocation | null>;
+  getOffice(officeId?: string): Promise<OfficeLocation | null>;
+  getOffices(): Promise<OfficeLocation[]>;
   postLocation(body: LocationUploadPayload): Promise<ApiReceipt>;
   postOffice(body: OfficeGeofencePayload): Promise<ApiReceipt>;
   postGeofenceEvent(body: GeofenceEventPayload): Promise<ApiReceipt>;
@@ -60,6 +61,9 @@ export function createMockApiClient(now: () => Date = () => new Date()): ApiClie
     },
     async getOffice() {
       return null;
+    },
+    async getOffices() {
+      return [];
     },
     async postLocation() {
       return {receivedAt: now().toISOString()};
@@ -127,16 +131,17 @@ export function createFetchApiClient(
     return receiptFrom(json, now());
   }
 
-  async function getOffice(): Promise<OfficeLocation | null> {
+  async function getOffice(officeId?: string): Promise<OfficeLocation | null> {
     const token = getAuthToken ? await getAuthToken() : null;
-    const response = await fetchWithTimeout('/api/office', `${root}/api/office`, {
+    const path = officeId ? `/api/office?id=${encodeURIComponent(officeId)}` : '/api/office';
+    const response = await fetchWithTimeout(path, `${root}${path}`, {
       method: 'GET',
       headers: {
         Accept: 'application/json',
         ...(token ? {Authorization: `Bearer ${token}`} : {}),
       },
     });
-    if (!response.ok) throw new Error(`Request to /api/office failed with status ${response.status}`);
+    if (!response.ok) throw new Error(`Request to ${path} failed with status ${response.status}`);
     const payload = await response.json().catch(() => ({}));
     if (!payload || typeof payload !== 'object') return null;
     const envelope = payload as Record<string, unknown>;
@@ -173,12 +178,40 @@ export function createFetchApiClient(
     return {deviceId: data.deviceId, deviceName: typeof data.deviceName === 'string' ? data.deviceName : undefined};
   }
 
+  async function getOffices(): Promise<OfficeLocation[]> {
+    const token = getAuthToken ? await getAuthToken() : null;
+    const response = await fetchWithTimeout('/api/office/list', `${root}/api/office/list`, {
+      method: 'GET',
+      headers: {Accept: 'application/json', ...(token ? {Authorization: `Bearer ${token}`} : {})},
+    });
+    if (response.status === 404) {
+      const fallback = await getOffice();
+      return fallback ? [fallback] : [];
+    }
+    if (!response.ok) throw new Error(`Request to /api/office/list failed with status ${response.status}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!payload || typeof payload !== 'object') return [];
+    const envelope = payload as Record<string, unknown>;
+    const data = envelope.data && typeof envelope.data === 'object' ? envelope.data as Record<string, unknown> : envelope;
+    const records = Array.isArray(data.offices) ? data.offices : [];
+    return records.flatMap((value): OfficeLocation[] => {
+      if (!value || typeof value !== 'object') return [];
+      const item = value as Record<string, unknown>;
+      const latitude = Number(item.latitude);
+      const longitude = Number(item.longitude);
+      const radiusMeters = Number(item.radiusMeters);
+      if (typeof item.id !== 'string' || !Number.isFinite(latitude) || !Number.isFinite(longitude) || !(radiusMeters > 0)) return [];
+      return [{id: item.id, name: typeof item.name === 'string' ? item.name : undefined, latitude, longitude, radiusMeters}];
+    });
+  }
+
   return {
     registerDevice(body) {
       return postJson('/api/devices/register', body);
     },
     getRegisteredDevice,
     getOffice,
+    getOffices,
     postLocation(body) {
       return postJson('/api/locations', body);
     },

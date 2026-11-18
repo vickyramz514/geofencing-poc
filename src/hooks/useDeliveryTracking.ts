@@ -157,7 +157,7 @@ export function useDeliveryTracking(device: {deviceId: string; deviceName: strin
   const publishEvent = useCallback(
     (event: GeofenceEvent) => {
       setEvents(current => [event, ...current].slice(0, 100));
-      if (event.schoolId === OFFICE_ID) {
+      if (event.schoolId === (officeRef.current?.schoolId ?? OFFICE_ID)) {
         setOfficePresence(event.eventType === 'EXIT' ? 'outside' : 'inside');
         showGeofenceNotification(event.eventType, event.eventId);
       }
@@ -186,7 +186,7 @@ export function useDeliveryTracking(device: {deviceId: string; deviceName: strin
       const event = toGeofenceEvent(nativeEvent, nativeEvent.uploaded ? 'uploaded' : 'pending');
       if (nativeEvent.uploaded) {
         setEvents(current => [event, ...current].slice(0, 100));
-        if (nativeEvent.schoolId === OFFICE_ID) {
+        if (nativeEvent.schoolId === (officeRef.current?.schoolId ?? OFFICE_ID)) {
           setOfficePresence(nativeEvent.eventType === 'EXIT' ? 'outside' : 'inside');
         }
         return;
@@ -207,9 +207,9 @@ export function useDeliveryTracking(device: {deviceId: string; deviceName: strin
   }, [acceptNativeEvent]);
 
   const configureOffice = useCallback(
-    (configuredOffice: {latitude: number; longitude: number; radiusMeters: number; presence?: string; name?: string}) => {
+    (configuredOffice: {id?: string; latitude: number; longitude: number; radiusMeters: number; presence?: string; name?: string}) => {
       const region: GeofenceRegion = {
-        schoolId: OFFICE_ID,
+        schoolId: configuredOffice.id || OFFICE_ID,
         latitude: configuredOffice.latitude,
         longitude: configuredOffice.longitude,
         radiusMeters: configuredOffice.radiusMeters,
@@ -238,7 +238,7 @@ export function useDeliveryTracking(device: {deviceId: string; deviceName: strin
       const region: GeofenceRegion = {...current, radiusMeters: meters};
       officeRef.current = region;
       setOffice(region);
-      const presence = services.geofencing.getPresence()[OFFICE_ID];
+      const presence = services.geofencing.getPresence()[current.schoolId];
       services.geofencing.registerGeofence(
         region,
         presence === 'inside' || presence === 'outside' ? presence : 'inside',
@@ -247,7 +247,7 @@ export function useDeliveryTracking(device: {deviceId: string; deviceName: strin
       if (fix != null) {
         services.geofencing.processLocation(fix);
         const result = services.geofencing.processLocation(fix);
-        const nextPresence = services.geofencing.getPresence()[OFFICE_ID];
+        const nextPresence = services.geofencing.getPresence()[current.schoolId];
         if (nextPresence === 'inside' || nextPresence === 'outside') {
           setOfficePresence(nextPresence);
         }
@@ -285,7 +285,7 @@ export function useDeliveryTracking(device: {deviceId: string; deviceName: strin
       locationRef.current = fix;
       setLocation(fix);
       const result = services.geofencing.processLocation(fix);
-      const nextPresence = services.geofencing.getPresence()[OFFICE_ID];
+      const nextPresence = services.geofencing.getPresence()[officeRef.current?.schoolId ?? OFFICE_ID];
       if (nextPresence === 'inside' || nextPresence === 'outside') {
         setOfficePresence(nextPresence);
       }
@@ -318,8 +318,8 @@ export function useDeliveryTracking(device: {deviceId: string; deviceName: strin
     }
   }, []);
 
-  const startTracking = useCallback(async () => {
-    if (trackingStatus === 'tracking' || trackingStatus === 'starting') {
+  const startTracking = useCallback(async (officeId?: string, forceRestart = false) => {
+    if (!forceRestart && (trackingStatus === 'tracking' || trackingStatus === 'starting')) {
       return;
     }
     setTrackingStatus('starting');
@@ -331,7 +331,7 @@ export function useDeliveryTracking(device: {deviceId: string; deviceName: strin
       setOffice(null);
       setOfficeName(null);
       setOfficePresence('unknown');
-      const configuredOffice = await services.api.getOffice();
+      const configuredOffice = await services.api.getOffice(officeId);
       if (!configuredOffice) {
         throw new Error('No office location is configured in the API. Add the office in the admin portal and try again.');
       }
@@ -386,10 +386,11 @@ export function useDeliveryTracking(device: {deviceId: string; deviceName: strin
     services.upload.setTracking(false);
     setBackgroundActive(false);
     settle(stopBackgroundMonitoring());
+    const currentOfficeId = officeRef.current?.schoolId ?? OFFICE_ID;
     officeRef.current = null;
     setOffice(null);
     setOfficePresence('unknown');
-    services.geofencing.removeGeofence(OFFICE_ID);
+    services.geofencing.removeGeofence(currentOfficeId);
     setTrackingStatus('stopped');
     settle(
       services.upload.flush().finally(() => {
@@ -397,6 +398,14 @@ export function useDeliveryTracking(device: {deviceId: string; deviceName: strin
       }),
     );
   }, [clearSubscriptions, refreshPending, services]);
+
+  const switchOffice = useCallback(async (officeId: string) => {
+    const wasTracking = trackingStatus === 'tracking' || trackingStatus === 'starting';
+    if (!wasTracking) return;
+    stopTracking();
+    await stopBackgroundMonitoring();
+    await startTracking(officeId, true);
+  }, [startTracking, stopTracking, trackingStatus]);
 
   const distanceMeters = useMemo(() => {
     if (!office || !location) {
@@ -430,5 +439,6 @@ export function useDeliveryTracking(device: {deviceId: string; deviceName: strin
     ),
     startTracking,
     stopTracking,
+    switchOffice,
   };
 }
