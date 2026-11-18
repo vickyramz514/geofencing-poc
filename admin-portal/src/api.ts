@@ -166,7 +166,7 @@ function adminFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<R
   const headers = new Headers(init.headers);
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
   if (adminApiToken) headers.set('Authorization', `Bearer ${adminApiToken}`);
-  return fetch(input, { ...init, headers });
+  return fetch(input, { ...init, cache: 'no-store', headers });
 }
 
 function getRecords<T>(value: unknown): T[] {
