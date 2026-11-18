@@ -19,7 +19,7 @@ function presenceCopy(presence: Presence | 'unknown', hasOffice: boolean, tracki
   return 'You are inside the office area.';
 }
 
-export function GeoFencingScreen({deviceId, deviceName}: {deviceId: string; deviceName: string}) {
+export function GeoFencingScreen({deviceId, deviceName, registrationNotice}: {deviceId: string; deviceName: string; registrationNotice?: string}) {
   const tracking = useDeliveryTracking({deviceId, deviceName});
   const insets = useSafeAreaInsets();
   const startedAutomatically = useRef(false);
@@ -100,6 +100,11 @@ export function GeoFencingScreen({deviceId, deviceName}: {deviceId: string; devi
       </SafeAreaView>
 
       <View style={[styles.bottom, {paddingBottom: Math.max(insets.bottom, spacing.md)}]} pointerEvents="box-none">
+        {registrationNotice ? (
+          <View style={styles.bannerInfo}>
+            <Text style={styles.bannerBody}>{registrationNotice}</Text>
+          </View>
+        ) : null}
         {tracking.permissionDenied ? (
           <View style={styles.bannerDanger}>
             <Text style={styles.bannerBody}>

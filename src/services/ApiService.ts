@@ -2,6 +2,7 @@ import type {
   ApiReceipt,
   DeliveryStatusPayload,
   DeviceRegistrationPayload,
+  RegisteredDevice,
   GeofenceEventPayload,
   LocationUploadPayload,
   OfficeLocation,
@@ -10,6 +11,7 @@ import type {
 
 export interface ApiClient {
   registerDevice(body: DeviceRegistrationPayload): Promise<ApiReceipt>;
+  getRegisteredDevice(deviceId: string): Promise<RegisteredDevice | null>;
   getOffice(): Promise<OfficeLocation | null>;
   postLocation(body: LocationUploadPayload): Promise<ApiReceipt>;
   postOffice(body: OfficeGeofencePayload): Promise<ApiReceipt>;
@@ -52,6 +54,9 @@ export function createMockApiClient(now: () => Date = () => new Date()): ApiClie
   return {
     async registerDevice() {
       return {receivedAt: now().toISOString()};
+    },
+    async getRegisteredDevice() {
+      return null;
     },
     async getOffice() {
       return null;
@@ -151,10 +156,28 @@ export function createFetchApiClient(
     };
   }
 
+  async function getRegisteredDevice(deviceId: string): Promise<RegisteredDevice | null> {
+    const path = `/api/devices/${encodeURIComponent(deviceId)}`;
+    const token = getAuthToken ? await getAuthToken() : null;
+    const response = await fetchWithTimeout(path, `${root}${path}`, {
+      method: 'GET',
+      headers: {Accept: 'application/json', ...(token ? {Authorization: `Bearer ${token}`} : {})},
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`Request to ${path} failed with status ${response.status}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!payload || typeof payload !== 'object') return null;
+    const envelope = payload as Record<string, unknown>;
+    const data = envelope.data && typeof envelope.data === 'object' ? envelope.data as Record<string, unknown> : null;
+    if (!data || typeof data.deviceId !== 'string') return null;
+    return {deviceId: data.deviceId, deviceName: typeof data.deviceName === 'string' ? data.deviceName : undefined};
+  }
+
   return {
     registerDevice(body) {
       return postJson('/api/devices/register', body);
     },
+    getRegisteredDevice,
     getOffice,
     postLocation(body) {
       return postJson('/api/locations', body);

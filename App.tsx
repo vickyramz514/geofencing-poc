@@ -87,20 +87,29 @@ function DeviceSetup({onRegistered}: {onRegistered: (profile: DeviceProfile) => 
 function App() {
   const [profile, setProfile] = useState<DeviceProfile | null>(null);
   const [checkingRegistration, setCheckingRegistration] = useState(true);
+  const [registrationNotice, setRegistrationNotice] = useState<string | undefined>();
   const api = useMemo(() => createAppServices().api, []);
-  const handleRegistered = useCallback((registered: DeviceProfile) => setProfile(registered), []);
+  const handleRegistered = useCallback((registered: DeviceProfile) => { setProfile(registered); setRegistrationNotice('Device registered'); }, []);
   useEffect(() => {
     AsyncStorage.getItem(DEVICE_PROFILE_KEY).then(async raw => {
       if (!raw) return;
       const saved = JSON.parse(raw) as DeviceProfile;
       if (!saved.deviceId || !saved.deviceName) return;
+      const existing = await api.getRegisteredDevice(saved.deviceId);
+      if (existing) {
+        const registered = {...saved, deviceName: existing.deviceName || saved.deviceName};
+        setProfile(registered);
+        setRegistrationNotice('Device already registered');
+        return;
+      }
       await api.registerDevice({...saved, platform: Platform.OS === 'ios' ? 'ios' : 'android'});
       setProfile(saved);
+      setRegistrationNotice('Device registered');
     }).catch(() => undefined).finally(() => setCheckingRegistration(false));
   }, [api]);
   return (
     <SafeAreaProvider>
-      {profile ? <GeoFencingScreen deviceId={profile.deviceId} deviceName={profile.deviceName} /> : checkingRegistration ? (
+      {profile ? <GeoFencingScreen deviceId={profile.deviceId} deviceName={profile.deviceName} registrationNotice={registrationNotice} /> : checkingRegistration ? (
         <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.helper}>Registering this device…</Text></View>
       ) : <DeviceSetup onRegistered={handleRegistered} />}
     </SafeAreaProvider>

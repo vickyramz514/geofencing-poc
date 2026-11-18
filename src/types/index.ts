@@ -85,6 +85,11 @@ export interface LocationUploadPayload {
   timestamp: string;
 }
 
+export interface RegisteredDevice {
+  deviceId: string;
+  deviceName?: string;
+}
+
 export interface DeviceRegistrationPayload {
   deviceId: string;
   deviceName: string;
