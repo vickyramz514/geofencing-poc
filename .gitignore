@@ -69,6 +69,7 @@ yarn-error.log
 # Local environment. Copy .env.example to .env. Do not commit secrets.
 .env.local
 server/data/
+admin-portal/server/data/
 
 # Yarn
 .yarn/*

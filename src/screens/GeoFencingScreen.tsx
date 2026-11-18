@@ -1,9 +1,9 @@
 import {StatusBar, StyleSheet, Text, View} from 'react-native';
+import {useEffect, useRef} from 'react';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
-import {RadiusPicker} from '../components/RadiusPicker';
 import {SchoolMap} from '../components/SchoolMap';
 import {TrackingControls} from '../components/TrackingControls';
-import {OFFICE_ID, OFFICE_NAME, OFFICE_RADIUS_OPTIONS} from '../data/office';
+import {OFFICE_ID, OFFICE_NAME} from '../data/office';
 import {useDeliveryTracking} from '../hooks/useDeliveryTracking';
 import {colors, spacing} from '../theme';
 import type {Presence, School} from '../types';
@@ -19,14 +19,20 @@ function presenceCopy(presence: Presence | 'unknown', hasOffice: boolean, tracki
   return 'You are inside the office area.';
 }
 
-export function GeoFencingScreen() {
-  const tracking = useDeliveryTracking();
+export function GeoFencingScreen({deviceId, deviceName}: {deviceId: string; deviceName: string}) {
+  const tracking = useDeliveryTracking({deviceId, deviceName});
   const insets = useSafeAreaInsets();
+  const startedAutomatically = useRef(false);
+  useEffect(() => {
+    if (startedAutomatically.current) return;
+    startedAutomatically.current = true;
+    tracking.startTracking().catch(() => undefined);
+  }, [tracking.startTracking]);
   const officeSchool: School | null = tracking.office
     ? {
         id: OFFICE_ID,
-        name: OFFICE_NAME,
-        address: `${tracking.office.radiusMeters} m around the location captured when tracking started`,
+        name: tracking.officeName || OFFICE_NAME,
+        address: 'Configured office location',
         latitude: tracking.office.latitude,
         longitude: tracking.office.longitude,
         radiusMeters: tracking.office.radiusMeters,
@@ -63,12 +69,8 @@ export function GeoFencingScreen() {
 
       <SafeAreaView style={styles.overlay} edges={['top', 'left', 'right']} pointerEvents="box-none">
         <View style={styles.top} pointerEvents="box-none">
-          <RadiusPicker
-            value={tracking.radiusMeters}
-            options={OFFICE_RADIUS_OPTIONS}
-            onChange={tracking.setRadiusMeters}
-          />
           <View pointerEvents="none" style={styles.details}>
+            <Text style={styles.deviceName}>{deviceName}</Text>
             <Text style={styles.coords}>
               {formatCoordinate(tracking.location?.latitude)},{' '}
               {formatCoordinate(tracking.location?.longitude)}
@@ -157,6 +159,17 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     fontSize: 12,
     fontWeight: '600',
+  },
+  deviceName: {
+    alignSelf: 'flex-start',
+    color: colors.text,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    overflow: 'hidden',
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 5,
+    fontSize: 13,
+    fontWeight: '700',
   },
   status: {
     borderRadius: 14,

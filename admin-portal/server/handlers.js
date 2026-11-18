@@ -21,6 +21,7 @@ function createStore() {
     locations: [],
     events: new Map(),
     deliveries: [],
+    devices: new Map(),
     office: null,
     presence: 'UNKNOWN',
   };
@@ -83,6 +84,7 @@ function handleRequest(store, request) {
       locations: store.locations,
       events: [...store.events.values()],
       deliveries: store.deliveries,
+      devices: [...store.devices.values()],
       generatedAt: receivedAt(),
     });
   }
@@ -112,6 +114,25 @@ function handleRequest(store, request) {
     };
     store.presence = 'INSIDE';
     return json(200, {receivedAt: anchoredAt, office: store.office, presence: store.presence});
+  }
+
+  if (path === '/api/devices/register') {
+    const {deviceId, deviceName, platform} = request.body;
+    if (typeof deviceId !== 'string' || !deviceId.trim() || typeof deviceName !== 'string' || !deviceName.trim() || !['android', 'ios'].includes(platform)) {
+      return json(400, {error: 'deviceId, deviceName, and a valid platform are required'});
+    }
+    const existing = store.devices.get(deviceId);
+    const device = {
+      ...(existing || {}),
+      deviceId: deviceId.trim(),
+      deviceName: deviceName.trim(),
+      platform,
+      active: true,
+      registeredAt: existing?.registeredAt || receivedAt(),
+      updatedAt: receivedAt(),
+    };
+    store.devices.set(device.deviceId, device);
+    return json(200, {receivedAt: device.updatedAt, device});
   }
 
   if (path === '/api/locations') {

@@ -28,6 +28,8 @@ function createScheduler() {
 
 function createApi(): ApiClient {
   return {
+    registerDevice: jest.fn(async () => ({receivedAt: '2026-10-10T00:00:00.000Z'})),
+    getOffice: jest.fn(async () => null),
     postLocation: jest.fn(async () => ({receivedAt: '2026-10-10T00:00:00.000Z'})),
     postOffice: jest.fn(async () => ({receivedAt: '2026-10-10T00:00:00.000Z'})),
     postGeofenceEvent: jest.fn(async () => ({receivedAt: '2026-10-10T00:00:01.000Z'})),

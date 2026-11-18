@@ -1,12 +1,16 @@
 import type {
   ApiReceipt,
   DeliveryStatusPayload,
+  DeviceRegistrationPayload,
   GeofenceEventPayload,
   LocationUploadPayload,
+  OfficeLocation,
   OfficeGeofencePayload,
 } from '../types';
 
 export interface ApiClient {
+  registerDevice(body: DeviceRegistrationPayload): Promise<ApiReceipt>;
+  getOffice(): Promise<OfficeLocation | null>;
   postLocation(body: LocationUploadPayload): Promise<ApiReceipt>;
   postOffice(body: OfficeGeofencePayload): Promise<ApiReceipt>;
   postGeofenceEvent(body: GeofenceEventPayload): Promise<ApiReceipt>;
@@ -46,6 +50,12 @@ function receiptFrom(body: unknown, now: Date): ApiReceipt {
 
 export function createMockApiClient(now: () => Date = () => new Date()): ApiClient {
   return {
+    async registerDevice() {
+      return {receivedAt: now().toISOString()};
+    },
+    async getOffice() {
+      return null;
+    },
     async postLocation() {
       return {receivedAt: now().toISOString()};
     },
@@ -67,7 +77,7 @@ export function createFetchApiClient(
   getAuthToken?: () => Promise<string | null>,
   now: () => Date = () => new Date(),
 ): ApiClient {
-  const root = baseUrl.replace(/\/$/, '');
+  const root = baseUrl.replace(/\/$/, '').replace(/\/api$/i, '');
 
   async function postJson(
     path: string,
@@ -98,7 +108,40 @@ export function createFetchApiClient(
     return receiptFrom(json, now());
   }
 
+  async function getOffice(): Promise<OfficeLocation | null> {
+    const token = getAuthToken ? await getAuthToken() : null;
+    const response = await fetchImpl(`${root}/api/office`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...(token ? {Authorization: `Bearer ${token}`} : {}),
+      },
+    });
+    if (!response.ok) throw new Error(`Request to /api/office failed with status ${response.status}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!payload || typeof payload !== 'object') return null;
+    const envelope = payload as Record<string, unknown>;
+    const data = envelope.data && typeof envelope.data === 'object' ? envelope.data as Record<string, unknown> : envelope;
+    const office = data.office && typeof data.office === 'object' ? data.office as Record<string, unknown> : data;
+    const latitude = Number(office.latitude);
+    const longitude = Number(office.longitude);
+    const radiusMeters = Number(office.radiusMeters);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !(radiusMeters > 0)) return null;
+    return {
+      id: typeof office.id === 'string' ? office.id : undefined,
+      name: typeof office.name === 'string' ? office.name : undefined,
+      latitude,
+      longitude,
+      radiusMeters,
+      presence: typeof data.presence === 'string' ? data.presence : undefined,
+    };
+  }
+
   return {
+    registerDevice(body) {
+      return postJson('/api/devices/register', body);
+    },
+    getOffice,
     postLocation(body) {
       return postJson('/api/locations', body);
     },

@@ -38,6 +38,7 @@ function loadStore() {
     const raw = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
     store.locations = Array.isArray(raw.locations) ? raw.locations : [];
     store.deliveries = Array.isArray(raw.deliveries) ? raw.deliveries : [];
+    store.devices = new Map((Array.isArray(raw.devices) ? raw.devices : []).filter(device => device && device.deviceId).map(device => [device.deviceId, device]));
     store.office = raw.office && typeof raw.office === 'object' ? raw.office : null;
     store.presence = raw.presence === 'INSIDE' || raw.presence === 'OUTSIDE' ? raw.presence : 'UNKNOWN';
     const events = Array.isArray(raw.events) ? raw.events : [];
@@ -60,6 +61,7 @@ function saveStore(store) {
       {
         locations: store.locations,
         deliveries: store.deliveries,
+        devices: [...store.devices.values()],
         events: [...store.events.values()],
         office: store.office,
         presence: store.presence,

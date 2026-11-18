@@ -7,7 +7,7 @@
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
-    "server": "node server/index.js",
+    "server": "node admin-portal/server/index.js",
     "test": "jest",
     "typecheck": "tsc --noEmit"
   },

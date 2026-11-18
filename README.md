@@ -10,7 +10,8 @@ This workspace was generated with React Native **0.86.3** because the installed 
 - Shows **inside the office area** until the device leaves that circle, then shows **outside**.
 - Detects **EXIT** when the device leaves and **ENTER** if it comes back. Opening the app inside the circle does not invent an entry.
 - Uploads locations on a movement and time policy, uploads geofence transitions immediately, and queues failed requests until the network returns.
-- Calls the local API in `server/` when `.env` points at it. Mock mode remains available.
+- Registers a named device on first launch, then opens the live map and starts tracking. Location updates include the registered device ID and name.
+- Calls the local API in `admin-portal/server/` when `.env` points at it. Mock mode remains available.
 
 Foreground GPS geofencing is covered by unit tests. Native background regions are registered on Android (Play services) and iOS (Core Location). That path is implemented in the app and has **not** been proven on a physical device. See [Foreground and background geofencing](#foreground-and-background-geofencing).
 
@@ -56,7 +57,7 @@ This repo includes that server. The checked-in `.env` is local and gitignored; t
 npm run server
 ```
 
-The server listens on `0.0.0.0:8787` and stores requests in gitignored `server/data/store.json`. Point `.env` at it:
+The server listens on `0.0.0.0:8787` and stores requests in gitignored `admin-portal/server/data/store.json`. Point `.env` at it:
 
 ```sh
 API_BASE_URL=http://192.168.1.24:8787
@@ -91,7 +92,7 @@ iOS uses `PROVIDER_DEFAULT` (Apple Maps), so no Google key is required. To switc
 2. Call `GMSServices.provideAPIKey` in `AppDelegate.swift` with a key supplied outside source control.
 3. Change the iOS map provider to `PROVIDER_GOOGLE`.
 
-Use a device or an emulator image that includes Google Play services for Android fused location. Grant location permission when the app asks. Tracking starts only after **Start Tracking** and stops on **Stop Tracking**.
+Use a device or an emulator image that includes Google Play services for Android fused location. Grant location permission when the app asks. After device registration, the map opens and tracking starts automatically. **Stop Tracking** pauses uploads; **Start Tracking** resumes them.
 
 ## Dashboard
 
@@ -151,7 +152,7 @@ An ENTER event while the school is `IN_TRANSIT` suggests arrival. Confirm arriva
 
 ## API contracts
 
-These routes are the client contract. `npm run server` implements them. Mock mode returns a `receivedAt` timestamp without calling the network.
+These routes are the client contract. `npm run server` implements them locally. The deployed API must also implement `POST /api/devices/register` and accept `deviceId` and `deviceName` on location updates for registered devices to appear by name in production. Mock mode returns a `receivedAt` timestamp without calling the network.
 
 `POST /api/office`
 
@@ -166,10 +167,24 @@ Sent when tracking starts, using the device's current coordinates. The server st
 }
 ```
 
+`POST /api/devices/register`
+
+Registers or updates the device name and platform. The app keeps a stable device ID locally and registers it before opening the map.
+
+```json
+{
+  "deviceId": "device-m5abc-1234abcd",
+  "deviceName": "Warehouse tablet",
+  "platform": "android"
+}
+```
+
 `POST /api/locations`
 
 ```json
 {
+  "deviceId": "device-m5abc-1234abcd",
+  "deviceName": "Warehouse tablet",
   "latitude": 13.0827,
   "longitude": 80.2707,
   "accuracy": 10,
@@ -255,8 +270,8 @@ src/
 ## Still required on a device
 
 - Rebuild the Android app so the Google Maps key in `android/local.properties` is merged, then confirm tiles, markers, and circles render.
-- Run `npm run server` and confirm a location post from the phone reaches `server/data/store.json`.
-- Grant location permission and confirm Start / Stop Tracking against a real GPS fix.
+- Run `npm run server` and confirm registration and location posts reach `admin-portal/server/data/store.json`.
+- Grant location permission and confirm automatic tracking starts after registration and Stop / Start works against a real GPS fix.
 - Walk a 200 metre school circle and confirm one ENTER and one EXIT.
 - On Android, allow location all the time, then confirm an ENTER or EXIT with the app swiped away.
 - On iOS, choose Always, then confirm a region event with the app closed.

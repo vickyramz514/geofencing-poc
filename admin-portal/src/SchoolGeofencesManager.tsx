@@ -18,7 +18,7 @@ interface FormState {
   geometry: Geometry;
   assignedDevices: string[];
 }
-const blankForm = (): FormState => ({ name: '', latitude: '', longitude: '', radiusMeters: '200', enabled: true, geofenceType: 'CIRCLE', geometry: null, assignedDevices: [] });
+const blankForm = (): FormState => ({ name: 'Colaninfo Tech', latitude: '13.067930644538661', longitude: '80.25592817406542', radiusMeters: '200', enabled: true, geofenceType: 'CIRCLE', geometry: null, assignedDevices: [] });
 const formatCoordinate = (value: number) => Number(value).toFixed(6);
 
 export function SchoolGeofencesManager() {
@@ -52,7 +52,7 @@ export function SchoolGeofencesManager() {
       setTotalPages(result.pagination.totalPages ?? (result.records.length ? 1 : 0));
       setError('');
     } catch (cause) {
-      if (!signal?.aborted) setError(cause instanceof Error ? cause.message : 'Could not load school geofences.');
+      if (!signal?.aborted) setError(cause instanceof Error ? cause.message : 'Could not load office geofences.');
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
@@ -83,7 +83,7 @@ export function SchoolGeofencesManager() {
       setValidation([]);
       setEditorOpen(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not load school details.');
+      setError(cause instanceof Error ? cause.message : 'Could not load office details.');
     } finally {
       setSaving(false);
     }
@@ -100,10 +100,10 @@ export function SchoolGeofencesManager() {
       if (editing) await updateSchool(editing.id, payload);
       else await createSchool(payload);
       setEditorOpen(false);
-      setNotice(editing ? 'School geofence updated.' : 'School geofence created.');
+      setNotice(editing ? 'Office geofence updated.' : 'Office geofence created.');
       await loadSchools();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Save failed. Check the school API and try again.');
+      setError(cause instanceof Error ? cause.message : 'Save failed. Check the office API and try again.');
     } finally {
       setSaving(false);
     }
@@ -128,13 +128,13 @@ export function SchoolGeofencesManager() {
 
   return <>
     {notice && <div className="school-notice"><span>✓</span>{notice}<button onClick={() => setNotice('')}>×</button></div>}
-    {error && !editorOpen && <div className="error-banner"><span>⚠</span><div><b>School API request failed</b><small>{error}</small></div><button onClick={() => void loadSchools()}>Retry</button></div>}
+    {error && !editorOpen && <div className="error-banner"><span>⚠</span><div><b>Office API request failed</b><small>{error}</small></div><button onClick={() => void loadSchools()}>Retry</button></div>}
     {editorOpen ? <section className="panel school-editor-panel">
-      <div className="panel-header"><div><h2>{editing ? 'Edit school geofence' : 'Create school geofence'}</h2><p>Set school coordinates and preview the boundary before saving.</p></div><button className="button secondary" onClick={closeEditor}>Cancel</button></div>
-      {error && <div className="school-form-error"><b>Could not save school</b><span>{error}</span></div>}
+      <div className="panel-header"><div><h2>{editing ? 'Edit office geofence' : 'Create office geofence'}</h2><p>Set office coordinates and preview the boundary before saving.</p></div><button className="button secondary" onClick={closeEditor}>Cancel</button></div>
+      {error && <div className="school-form-error"><b>Could not save office</b><span>{error}</span></div>}
       <div className="school-editor-layout">
         <div className="school-form">
-          <Field label="School name" error={validation.find(item => item.startsWith('School name'))}><input value={form.name} onChange={event => setForm(current => ({ ...current, name: event.target.value }))} placeholder="Enter school name" /></Field>
+          <Field label="Office name" error={validation.find(item => item.startsWith('Office name'))}><input value={form.name} onChange={event => setForm(current => ({ ...current, name: event.target.value }))} placeholder="Enter office name" /></Field>
           <div className="coordinate-fields"><Field label="Latitude" error={validation.find(item => item.startsWith('Latitude'))}><input type="number" step="any" value={form.latitude} onChange={event => setForm(current => ({ ...current, latitude: event.target.value }))} placeholder="e.g. 13.082700" /></Field><Field label="Longitude" error={validation.find(item => item.startsWith('Longitude'))}><input type="number" step="any" value={form.longitude} onChange={event => setForm(current => ({ ...current, longitude: event.target.value }))} placeholder="e.g. 80.270700" /></Field></div>
           <div className="field-error-line">{validation.filter(item => item.startsWith('Coordinates')).join(' ')}</div>
           <div className="geofence-type-control"><span>Boundary type</span><div><button className={form.geofenceType === 'CIRCLE' ? 'active' : ''} onClick={() => setForm(current => ({ ...current, geofenceType: 'CIRCLE', geometry: null }))}>Circle</button><button className={form.geofenceType === 'POLYGON' ? 'active' : ''} onClick={() => setForm(current => ({ ...current, geofenceType: 'POLYGON', geometry: current.geometry }))}>Polygon</button></div></div>
@@ -142,18 +142,18 @@ export function SchoolGeofencesManager() {
           <label className="enabled-toggle"><input type="checkbox" checked={form.enabled} onChange={event => setForm(current => ({ ...current, enabled: event.target.checked }))} /><span className="toggle-ui"/><span><b>Geofence enabled</b><small>Enabled fences are used for presence monitoring.</small></span></label>
           {editing && <AssignedDevices devices={form.assignedDevices} />}
           <div className="validation-list">{validation.map(message => <span key={message}>{message}</span>)}</div>
-          <div className="school-form-actions"><button className="button secondary" onClick={closeEditor}>Cancel</button><button className="button primary" disabled={saving} onClick={() => void save()}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create school'}</button></div>
+          <div className="school-form-actions"><button className="button secondary" onClick={closeEditor}>Cancel</button><button className="button primary" disabled={saving} onClick={() => void save()}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create office'}</button></div>
         </div>
         <div className="school-preview"><div className="preview-title"><div><b>Boundary preview</b><small>{form.geofenceType === 'CIRCLE' ? `${form.radiusMeters || 0} meter radius` : form.geometry ? 'Polygon boundary' : 'Draw the boundary on the map'}</small></div><span>PREVIEW</span></div>
-          {editorCenter(form, mapFallback) ? <EditorMap key={editing?.id || 'new-school'} form={form} fallback={mapFallback} onGeometryChange={geometry => setForm(current => ({ ...current, geometry }))} /> : <div className="editor-map-empty">Enter latitude and longitude, or load an existing school, to open its map preview.</div>}
+          {editorCenter(form, mapFallback) ? <EditorMap key={editing?.id || 'new-school'} form={form} fallback={mapFallback} onGeometryChange={geometry => setForm(current => ({ ...current, geometry }))} /> : <div className="editor-map-empty">Enter latitude and longitude, or load an existing office, to open its map preview.</div>}
           {form.geofenceType === 'POLYGON' && <div className="polygon-coordinate-count">{polygonVertexCount(form.geometry)} polygon vertices</div>}
         </div>
       </div>
     </section> : <section className="panel page-panel school-list-panel">
-      <div className="panel-header"><div><h2>School geofence management</h2><p>{total} configured school{total === 1 ? '' : 's'} · search, configure, and preview boundaries</p></div><button className="button primary" onClick={openCreate}>＋ Create school</button></div>
-      <div className="school-list-controls"><label className="search"><span>⌕</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search schools by name or ID" /></label><button className="button secondary" onClick={() => void loadSchools()}>⟳ Refresh</button></div>
+      <div className="panel-header"><div><h2>Office geofence management</h2><p>{total} configured office{total === 1 ? '' : 's'} · search, configure, and preview boundaries</p></div><button className="button primary" onClick={openCreate}>＋ Create office</button></div>
+      <div className="school-list-controls"><label className="search"><span>⌕</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search offices by name or ID" /></label><button className="button secondary" onClick={() => void loadSchools()}>⟳ Refresh</button></div>
       {error && <div className="school-form-error"><b>Could not load schools</b><span>{error}</span></div>}
-      {loading ? <div className="empty-state"><div className="spinner"/><b>Loading school geofences</b><span>Fetching schools from the admin API.</span></div> : schools.length ? <div className="school-table-wrap"><table className="school-table"><thead><tr><th>SCHOOL</th><th>BOUNDARY</th><th>ASSIGNED DEVICES</th><th>PRESENCE</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>{schools.map(school => <tr key={school.id}><td><div className="school-table-name"><b>{school.name || school.id}</b><small>{school.id} · {formatCoordinate(school.latitude)}, {formatCoordinate(school.longitude)}</small></div></td><td><span className="boundary-kind">{isPolygon(school) ? 'Polygon' : 'Circle · ' + (school.radiusMeters || 0) + 'm'}</span></td><td><AssignedDevices devices={deviceLabels(school)} compact /></td><td><span className={`presence-pill ${['PRESENT', 'INSIDE'].includes(String(school.presence).toUpperCase()) ? 'present' : ''}`}>{school.presence || 'UNKNOWN'}</span></td><td><button className={`status-toggle ${school.enabled ? 'enabled' : ''}`} disabled={saving} onClick={() => void toggleEnabled(school)} aria-label={`${school.enabled ? 'Disable' : 'Enable'} ${school.name || school.id}`}><span/>{school.enabled ? 'Enabled' : 'Disabled'}</button></td><td><button className="table-action" disabled={saving} onClick={() => void openEdit(school)}>Edit</button></td></tr>)}</tbody></table></div> : <div className="empty-state"><div className="empty-icon">⌂</div><b>{searchTerm ? 'No schools match this search' : 'No school geofences yet'}</b><span>{searchTerm ? 'Try another school name or identifier.' : 'Create a school geofence to start monitoring this location.'}</span></div>}
+      {loading ? <div className="empty-state"><div className="spinner"/><b>Loading office geofences</b><span>Fetching offices from the admin API.</span></div> : schools.length ? <div className="school-table-wrap"><table className="school-table"><thead><tr><th>OFFICE</th><th>BOUNDARY</th><th>ASSIGNED DEVICES</th><th>PRESENCE</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>{schools.map(school => <tr key={school.id}><td><div className="school-table-name"><b>{school.name || school.id}</b><small>{school.id} · {formatCoordinate(school.latitude)}, {formatCoordinate(school.longitude)}</small></div></td><td><span className="boundary-kind">{isPolygon(school) ? 'Polygon' : 'Circle · ' + (school.radiusMeters || 0) + 'm'}</span></td><td><AssignedDevices devices={deviceLabels(school)} compact /></td><td><span className={`presence-pill ${['PRESENT', 'INSIDE'].includes(String(school.presence).toUpperCase()) ? 'present' : ''}`}>{school.presence || 'UNKNOWN'}</span></td><td><button className={`status-toggle ${school.enabled ? 'enabled' : ''}`} disabled={saving} onClick={() => void toggleEnabled(school)} aria-label={`${school.enabled ? 'Disable' : 'Enable'} ${school.name || school.id}`}><span/>{school.enabled ? 'Enabled' : 'Disabled'}</button></td><td><button className="table-action" disabled={saving} onClick={() => void openEdit(school)}>Edit</button></td></tr>)}</tbody></table></div> : <div className="empty-state"><div className="empty-icon">⌂</div><b>{searchTerm ? 'No offices match this search' : 'No office geofences yet'}</b><span>{searchTerm ? 'Try another office name or identifier.' : 'Create an office geofence to start monitoring this location.'}</span></div>}
       <div className="school-pagination"><small>Showing {schools.length ? (page - 1) * PAGE_LIMIT + 1 : 0}–{Math.min(page * PAGE_LIMIT, total)} of {total}</small><div><button disabled={page <= 1 || loading} onClick={() => setPage(current => current - 1)}>Previous</button><span>Page {page} of {Math.max(totalPages, 1)}</span><button disabled={page >= totalPages || loading} onClick={() => setPage(current => current + 1)}>Next</button></div></div>
     </section>}
   </>;
@@ -168,7 +168,7 @@ function EditorMap({ form, fallback, onGeometryChange }: { form: FormState; fall
   const center = editorCenter(form, fallback)!;
   const position: LatLngExpression = [center.latitude, center.longitude];
   const resetKey = `${form.geofenceType}:${fallback?.id || 'new'}`;
-  return <MapContainer center={position} zoom={15} scrollWheelZoom className="school-editor-map"><TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" /><EditorMapView center={position} /><BoundaryDrawControl resetKey={resetKey} geometry={form.geofenceType === 'POLYGON' ? form.geometry : null} onChange={onGeometryChange} enabled={form.geofenceType === 'POLYGON'} />{form.geofenceType === 'CIRCLE' && Number(form.radiusMeters) > 0 && <Circle center={position} radius={Number(form.radiusMeters)} pathOptions={{ color: '#238265', fillColor: '#40a988', fillOpacity: 0.18, weight: 2 }} />}<Marker position={position}><Popup>{form.name || 'School location'}<br />{formatCoordinate(center.latitude)}, {formatCoordinate(center.longitude)}</Popup></Marker></MapContainer>;
+  return <MapContainer center={position} zoom={15} scrollWheelZoom className="school-editor-map"><TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" /><EditorMapView center={position} /><BoundaryDrawControl resetKey={resetKey} geometry={form.geofenceType === 'POLYGON' ? form.geometry : null} onChange={onGeometryChange} enabled={form.geofenceType === 'POLYGON'} />{form.geofenceType === 'CIRCLE' && Number(form.radiusMeters) > 0 && <Circle center={position} radius={Number(form.radiusMeters)} pathOptions={{ color: '#238265', fillColor: '#40a988', fillOpacity: 0.18, weight: 2 }} />}<Marker position={position}><Popup>{form.name || 'Office location'}<br />{formatCoordinate(center.latitude)}, {formatCoordinate(center.longitude)}</Popup></Marker></MapContainer>;
 }
 
 function BoundaryDrawControl({ resetKey, geometry, enabled, onChange }: { resetKey: string; geometry: Geometry; enabled: boolean; onChange: (geometry: Geometry) => void }) {
@@ -226,7 +226,7 @@ function toPayload(form: FormState): SchoolGeofenceInput {
 }
 function validateForm(form: FormState): string[] {
   const errors: string[] = [];
-  if (!form.name.trim()) errors.push('School name is required.');
+  if (!form.name.trim()) errors.push('Office name is required.');
   const latitude = Number(form.latitude);
   const longitude = Number(form.longitude);
   if (form.latitude === '' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90) errors.push('Latitude must be between -90 and 90.');

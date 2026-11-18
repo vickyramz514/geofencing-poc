@@ -62,6 +62,7 @@ function toGeofencePayload(event: GeofenceEvent): GeofenceEventPayload {
 }
 
 export class LocationUploadService {
+  private device: {deviceId: string; deviceName: string} | null = null;
   private tracking = false;
   private online = true;
   private inFlight = false;
@@ -83,6 +84,10 @@ export class LocationUploadService {
     private readonly now: () => number = Date.now,
     private readonly scheduler: UploadScheduler = defaultScheduler,
   ) {}
+
+  setDevice(device: {deviceId: string; deviceName: string}): void {
+    this.device = device;
+  }
 
   setTracking(tracking: boolean): void {
     this.tracking = tracking;
@@ -139,6 +144,7 @@ export class LocationUploadService {
     }
 
     const payload: LocationUploadPayload = {
+      ...(this.device ?? {}),
       latitude: fix.latitude,
       longitude: fix.longitude,
       accuracy: fix.accuracy,

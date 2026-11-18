@@ -67,11 +67,28 @@ export interface OfficeGeofencePayload {
   anchoredAt: string;
 }
 
+export interface OfficeLocation {
+  id?: string;
+  name?: string;
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  presence?: 'INSIDE' | 'OUTSIDE' | string;
+}
+
 export interface LocationUploadPayload {
+  deviceId?: string;
+  deviceName?: string;
   latitude: number;
   longitude: number;
   accuracy: number;
   timestamp: string;
+}
+
+export interface DeviceRegistrationPayload {
+  deviceId: string;
+  deviceName: string;
+  platform: 'android' | 'ios';
 }
 
 export interface GeofenceEventPayload {

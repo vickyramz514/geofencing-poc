@@ -55,7 +55,7 @@ function settle(work: Promise<unknown>): void {
   work.catch(() => undefined);
 }
 
-export function useDeliveryTracking() {
+export function useDeliveryTracking(device: {deviceId: string; deviceName: string}) {
   const servicesRef = useRef<AppServices | null>(null);
   if (servicesRef.current == null) {
     servicesRef.current = createAppServices();
@@ -79,6 +79,7 @@ export function useDeliveryTracking() {
   const [events, setEvents] = useState<GeofenceEvent[]>([]);
   const [radiusMeters, setRadiusMetersState] = useState(OFFICE_RADIUS_METERS);
   const [office, setOffice] = useState<GeofenceRegion | null>(null);
+  const [officeName, setOfficeName] = useState<string | null>(null);
   const [officePresence, setOfficePresence] = useState<Presence | 'unknown'>('unknown');
   const [accuracyAccepted, setAccuracyAccepted] = useState(true);
   const [backgroundActive, setBackgroundActive] = useState(false);
@@ -92,6 +93,10 @@ export function useDeliveryTracking() {
     subscriptionsRef.current.forEach(unsubscribe => unsubscribe());
     subscriptionsRef.current = [];
   }, []);
+
+  useEffect(() => {
+    services.upload.setDevice(device);
+  }, [device.deviceId, device.deviceName, services.upload]);
 
   useEffect(() => {
     const upload = services.upload;
@@ -201,38 +206,23 @@ export function useDeliveryTracking() {
     return unsubscribe;
   }, [acceptNativeEvent]);
 
-  const anchorOffice = useCallback(
-    (fix: LocationFix) => {
+  const configureOffice = useCallback(
+    (configuredOffice: {latitude: number; longitude: number; radiusMeters: number; presence?: string; name?: string}) => {
       const region: GeofenceRegion = {
         schoolId: OFFICE_ID,
-        latitude: fix.latitude,
-        longitude: fix.longitude,
-        radiusMeters: radiusRef.current,
+        latitude: configuredOffice.latitude,
+        longitude: configuredOffice.longitude,
+        radiusMeters: configuredOffice.radiusMeters,
       };
+      radiusRef.current = region.radiusMeters;
+      setRadiusMetersState(region.radiusMeters);
       officeRef.current = region;
       setOffice(region);
-      services.geofencing.registerGeofence(region, 'inside');
-      setOfficePresence('inside');
-      settle(
-        services.api.postOffice({
-          latitude: region.latitude,
-          longitude: region.longitude,
-          radiusMeters: region.radiusMeters,
-          anchoredAt: new Date(fix.timestamp).toISOString(),
-        }),
-      );
-      const apiBaseUrl = services.environment.useMockApi ? '' : services.environment.apiBaseUrl;
-      settle(
-        startBackgroundMonitoring([region], apiBaseUrl)
-          .then(started => {
-            setBackgroundActive(started && backgroundPermissionRef.current === 'granted');
-          })
-          .catch(() => {
-            setNotice(
-              'Background regions could not be registered. Foreground detection is still running.',
-            );
-          }),
-      );
+      setOfficeName(configuredOffice.name || null);
+      const initialPresence = configuredOffice.presence?.toLowerCase();
+      const presence = initialPresence === 'outside' ? 'outside' : 'inside';
+      services.geofencing.registerGeofence(region, presence);
+      setOfficePresence(presence);
     },
     [services],
   );
@@ -274,14 +264,6 @@ export function useDeliveryTracking() {
           publishEvent(createEvent(transition));
         });
       }
-      settle(
-        services.api.postOffice({
-          latitude: region.latitude,
-          longitude: region.longitude,
-          radiusMeters: region.radiusMeters,
-          anchoredAt: new Date().toISOString(),
-        }),
-      );
       const apiBaseUrl = services.environment.useMockApi ? '' : services.environment.apiBaseUrl;
       settle(
         startBackgroundMonitoring([region], apiBaseUrl)
@@ -302,9 +284,6 @@ export function useDeliveryTracking() {
     (fix: LocationFix) => {
       locationRef.current = fix;
       setLocation(fix);
-      if (officeRef.current == null) {
-        anchorOffice(fix);
-      }
       const result = services.geofencing.processLocation(fix);
       const nextPresence = services.geofencing.getPresence()[OFFICE_ID];
       if (nextPresence === 'inside' || nextPresence === 'outside') {
@@ -325,7 +304,7 @@ export function useDeliveryTracking() {
       });
       settle(services.upload.handleFix(fix));
     },
-    [anchorOffice, publishEvent, services],
+    [publishEvent, services],
   );
 
   const onLocationError = useCallback((error: LocationTrackingError) => {
@@ -350,7 +329,13 @@ export function useDeliveryTracking() {
     try {
       officeRef.current = null;
       setOffice(null);
+      setOfficeName(null);
       setOfficePresence('unknown');
+      const configuredOffice = await services.api.getOffice();
+      if (!configuredOffice) {
+        throw new Error('No office location is configured in the API. Add the office in the admin portal and try again.');
+      }
+      configureOffice(configuredOffice);
       await requestGeofenceNotificationPermission();
       services.upload.setTracking(true);
       clearSubscriptions();
@@ -360,6 +345,15 @@ export function useDeliveryTracking() {
       ];
       await services.location.start();
       backgroundPermissionRef.current = await requestBackgroundLocation();
+      const region = officeRef.current;
+      if (region) {
+        const apiBaseUrl = services.environment.useMockApi ? '' : services.environment.apiBaseUrl;
+        settle(startBackgroundMonitoring([region], apiBaseUrl).then(started => {
+          setBackgroundActive(started && backgroundPermissionRef.current === 'granted');
+        }).catch(() => {
+          setNotice('Background regions could not be registered. Foreground detection is still running.');
+        }));
+      }
       if (backgroundPermissionRef.current !== 'granted') {
         setNotice(backgroundPermissionCopy);
       }
@@ -383,7 +377,7 @@ export function useDeliveryTracking() {
       );
       setTrackingStatus('stopped');
     }
-  }, [clearSubscriptions, onFix, onLocationError, services, trackingStatus]);
+  }, [clearSubscriptions, configureOffice, onFix, onLocationError, services, trackingStatus]);
 
   const stopTracking = useCallback(() => {
     clearSubscriptions();
@@ -415,6 +409,7 @@ export function useDeliveryTracking() {
     useMockApi: services.environment.useMockApi,
     apiBaseUrl: services.environment.apiBaseUrl,
     office,
+    officeName,
     radiusMeters,
     setRadiusMeters,
     officePresence,
