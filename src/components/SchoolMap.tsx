@@ -9,11 +9,9 @@ import MapView, {
 } from 'react-native-maps';
 import type {LocationFix, Presence, School} from '../types';
 import {colors, spacing} from '../theme';
-import {formatDistance} from '../utils/format';
 
 export interface SchoolMapItem {
   school: School;
-  distanceMeters: number | null;
   presence: Presence | 'unknown';
 }
 
@@ -29,16 +27,6 @@ interface SchoolMapProps {
 
 const MIN_DELTA = 0.0006;
 const MAX_DELTA = 0.5;
-
-function presenceLabel(presence: Presence | 'unknown'): string {
-  if (presence === 'inside') {
-    return 'Inside';
-  }
-  if (presence === 'outside') {
-    return 'Outside';
-  }
-  return 'Waiting for GPS';
-}
 
 function circleColors(presence: Presence | 'unknown'): {fill: string; stroke: string} {
   if (presence === 'inside') {
@@ -168,7 +156,6 @@ export function SchoolMap({
         style={styles.map}
         initialRegion={regionRef.current}
         mapType={mapType}
-        showsUserLocation={tracking}
         showsMyLocationButton={false}
         showsCompass
         zoomEnabled
@@ -183,13 +170,26 @@ export function SchoolMap({
           regionRef.current = region;
         }}>
         {location ? (
-          <Circle
-            center={{latitude: location.latitude, longitude: location.longitude}}
-            radius={Math.max(location.accuracy, 1)}
-            fillColor="rgba(24, 95, 165, 0.15)"
-            strokeColor="rgba(24, 95, 165, 0.8)"
-            strokeWidth={1}
-          />
+          <>
+            <Circle
+              center={{latitude: location.latitude, longitude: location.longitude}}
+              radius={Math.max(location.accuracy, 1)}
+              fillColor="rgba(24, 95, 165, 0.15)"
+              strokeColor="rgba(24, 95, 165, 0.8)"
+              strokeWidth={1}
+            />
+            {tracking ? (
+              <Marker
+                coordinate={{latitude: location.latitude, longitude: location.longitude}}
+                anchor={{x: 0.5, y: 0.5}}
+                title="Truck location"
+                zIndex={1}>
+                <View style={styles.truckMarker}>
+                  <Text style={styles.truckIcon}>🚚</Text>
+                </View>
+              </Marker>
+            ) : null}
+          </>
         ) : null}
         {schools.map(item => {
           const palette = circleColors(item.presence);
@@ -212,7 +212,6 @@ export function SchoolMap({
                   longitude: item.school.longitude,
                 }}
                 title={item.school.name}
-                description={`${formatDistance(item.distanceMeters)} · ${presenceLabel(item.presence)}`}
                 pinColor={item.school.color}
                 onPress={() => onSelectSchool(item.school.id)}
               />
@@ -224,7 +223,7 @@ export function SchoolMap({
       <View style={styles.controls}>
         <MapButton label="+" accessibilityLabel="Zoom in" onPress={() => zoomBy(0.5)} />
         <MapButton label="−" accessibilityLabel="Zoom out" onPress={() => zoomBy(2)} />
-        <MapButton label="Fit" accessibilityLabel="Fit the office area" onPress={fitFence} />
+        <MapButton label="Fit" accessibilityLabel="Fit the geofence" onPress={fitFence} />
         <MapButton
           label={optionsOpen ? 'Less' : 'More'}
           accessibilityLabel={optionsOpen ? 'Hide map options' : 'Show map options'}
@@ -239,7 +238,7 @@ export function SchoolMap({
             />
             <MapButton
               label={follow ? 'Following' : 'Follow'}
-              accessibilityLabel={follow ? 'Stop following your location' : 'Follow your location'}
+              accessibilityLabel={follow ? 'Stop following the truck' : 'Follow the truck'}
               active={follow}
               onPress={() => setFollow(current => !current)}
             />
@@ -287,6 +286,19 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
+  },
+  truckMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderColor: colors.primary,
+    borderWidth: 2,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  truckIcon: {
+    fontSize: 22,
   },
   controls: {
     position: 'absolute',

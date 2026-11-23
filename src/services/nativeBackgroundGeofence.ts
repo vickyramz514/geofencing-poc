@@ -92,8 +92,8 @@ export async function requestGeofenceNotificationPermission(): Promise<void> {
       return;
     }
     await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS, {
-      title: 'Office alerts',
-      message: 'Allow notifications so GeoFencePOC can tell you when you enter or leave the office area.',
+      title: 'Truck geofence alerts',
+      message: 'Allow notifications to get alerts when the truck enters or leaves a geofence.',
       buttonPositive: 'Allow',
       buttonNegative: 'Not now',
     });

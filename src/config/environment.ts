@@ -23,6 +23,7 @@ function localApiHostForPlatform(url: string): string {
 export function resolveEnvironment(
   source: {apiBaseUrl?: string; useMockApi?: string} = {},
 ): AppEnvironment {
+  console.log('source',source)
   const configuredApiBaseUrl = readString(
     source.apiBaseUrl !== undefined ? source.apiBaseUrl : API_BASE_URL,
   );

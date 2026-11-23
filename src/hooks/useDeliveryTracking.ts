@@ -333,7 +333,7 @@ export function useDeliveryTracking(device: {deviceId: string; deviceName: strin
       setOfficePresence('unknown');
       const configuredOffice = await services.api.getOffice(officeId);
       if (!configuredOffice) {
-        throw new Error('No office location is configured in the API. Add the office in the admin portal and try again.');
+        throw new Error('No geofence is configured. Add a geofence in the admin portal and try again.');
       }
       configureOffice(configuredOffice);
       await requestGeofenceNotificationPermission();

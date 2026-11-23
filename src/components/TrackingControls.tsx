@@ -30,7 +30,7 @@ export function TrackingControls({
         {starting ? (
           <ActivityIndicator color={colors.white} />
         ) : (
-          <Text style={styles.primaryText}>Start Tracking</Text>
+          <Text style={styles.primaryText}>▶  Start Tracking</Text>
         )}
       </Pressable>
       <Pressable
@@ -44,7 +44,7 @@ export function TrackingControls({
           (!tracking || starting) && styles.disabled,
           pressed && tracking && styles.pressed,
         ]}>
-        <Text style={styles.primaryText}>Stop Tracking</Text>
+        <Text style={styles.primaryText}>■  Stop Tracking</Text>
       </Pressable>
     </View>
   );

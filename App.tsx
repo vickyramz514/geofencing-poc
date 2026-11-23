@@ -15,7 +15,7 @@ function newDeviceId(): string {
 
 function DeviceSetup({onRegistered}: {onRegistered: (profile: DeviceProfile) => void}) {
   const api = useMemo(() => createAppServices().api, []);
-  const [deviceName, setDeviceName] = useState(Platform.OS === 'ios' ? 'iPhone' : 'Android device');
+  const [deviceName, setDeviceName] = useState('');
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +49,7 @@ function DeviceSetup({onRegistered}: {onRegistered: (profile: DeviceProfile) => 
       await AsyncStorage.setItem(DEVICE_PROFILE_KEY, JSON.stringify(profile));
       onRegistered(profile);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Device registration failed. Check the API connection and retry.');
+      setError(cause instanceof Error ? cause.message : 'Truck registration failed. Check the API connection and retry.');
     } finally {
       setBusy(false);
     }
@@ -59,14 +59,14 @@ function DeviceSetup({onRegistered}: {onRegistered: (profile: DeviceProfile) => 
     <View style={styles.setup}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <View style={styles.card}>
-        <Text style={styles.eyebrow}>DEVICE SETUP</Text>
-        <Text style={styles.title}>Register this device</Text>
-        <Text style={styles.description}>Choose a name so this device is easy to identify on the live map.</Text>
+        <Text style={styles.eyebrow}>TRUCK TRACKING</Text>
+        <Text style={styles.title}>Register a truck</Text>
+        <Text style={styles.description}>Enter a truck name or number to identify it on the live map.</Text>
         <TextInput
-          accessibilityLabel="Device name"
+          accessibilityLabel="Truck name or number"
           value={deviceName}
           onChangeText={setDeviceName}
-          placeholder="Device name"
+          placeholder="Truck name or number"
           placeholderTextColor={colors.muted}
           maxLength={60}
           style={styles.input}
@@ -89,7 +89,7 @@ function App() {
   const [checkingRegistration, setCheckingRegistration] = useState(true);
   const [registrationNotice, setRegistrationNotice] = useState<string | undefined>();
   const api = useMemo(() => createAppServices().api, []);
-  const handleRegistered = useCallback((registered: DeviceProfile) => { setProfile(registered); setRegistrationNotice('Device registered'); }, []);
+  const handleRegistered = useCallback((registered: DeviceProfile) => { setProfile(registered); setRegistrationNotice('Truck registered'); }, []);
   useEffect(() => {
     AsyncStorage.getItem(DEVICE_PROFILE_KEY).then(async raw => {
       if (!raw) return;
@@ -99,18 +99,18 @@ function App() {
       if (existing) {
         const registered = {...saved, deviceName: existing.deviceName || saved.deviceName};
         setProfile(registered);
-        setRegistrationNotice('Device already registered');
+        setRegistrationNotice('Truck already registered');
         return;
       }
       await api.registerDevice({...saved, platform: Platform.OS === 'ios' ? 'ios' : 'android'});
       setProfile(saved);
-      setRegistrationNotice('Device registered');
+      setRegistrationNotice('Truck registered');
     }).catch(() => undefined).finally(() => setCheckingRegistration(false));
   }, [api]);
   return (
     <SafeAreaProvider>
       {profile ? <GeoFencingScreen deviceId={profile.deviceId} deviceName={profile.deviceName} registrationNotice={registrationNotice} /> : checkingRegistration ? (
-        <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.helper}>Registering this device…</Text></View>
+        <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.helper}>Registering truck…</Text></View>
       ) : <DeviceSetup onRegistered={handleRegistered} />}
     </SafeAreaProvider>
   );

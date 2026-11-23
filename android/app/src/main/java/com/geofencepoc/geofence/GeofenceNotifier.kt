@@ -21,11 +21,11 @@ object GeofenceNotifier {
   fun showTransition(context: Context, eventType: String, eventId: String) {
     val inside = eventType != "EXIT"
     val radius = officeRadiusMeters(context, eventId)
-    val area = if (radius == null) "office area" else "$radius m office area"
+    val area = if (radius == null) "geofence" else "$radius m geofence"
     show(
       context,
-      title = if (inside) "Inside the office area" else "Outside the office area",
-      body = if (inside) "You entered the $area." else "You left the $area.",
+      title = if (inside) "Truck entered the geofence" else "Truck left the geofence",
+      body = if (inside) "The truck entered the $area." else "The truck left the $area.",
       eventType = if (inside) "ENTER" else "EXIT",
       eventId = eventId,
     )
@@ -39,10 +39,10 @@ object GeofenceNotifier {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       val channel = NotificationChannel(
         CHANNEL_ID,
-        "Office geofence",
+        "Truck geofence alerts",
         NotificationManager.IMPORTANCE_HIGH,
       ).apply {
-        description = "Alerts when you enter or leave the office area"
+        description = "Alerts when the truck enters or leaves a geofence"
         enableVibration(true)
       }
       manager.createNotificationChannel(channel)

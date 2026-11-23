@@ -8,18 +8,8 @@ import {OFFICE_ID, OFFICE_NAME} from '../data/office';
 import {useDeliveryTracking} from '../hooks/useDeliveryTracking';
 import {createAppServices} from '../services/createAppServices';
 import {colors, spacing} from '../theme';
-import type {OfficeLocation, Presence, School} from '../types';
-import {formatCoordinate, formatDistance} from '../utils/format';
-
-function presenceCopy(presence: Presence | 'unknown', hasOffice: boolean, tracking: boolean): string {
-  if (!hasOffice) {
-    return tracking ? 'Getting your location…' : 'Start tracking to set the office area.';
-  }
-  if (presence === 'outside') {
-    return 'You are outside the office area.';
-  }
-  return 'You are inside the office area.';
-}
+import type {OfficeLocation, School} from '../types';
+import {formatCoordinate} from '../utils/format';
 
 const SELECTED_OFFICE_KEY = 'geofence.selected-office.v1';
 
@@ -45,9 +35,9 @@ export function GeoFencingScreen({deviceId, deviceName, registrationNotice}: {de
       const savedId = await AsyncStorage.getItem(SELECTED_OFFICE_KEY).catch(() => null);
       const selected = choices.find(office => office.id === savedId) || choices[0];
       setSelectedOfficeId(selected?.id || null);
-      setOfficeLoadError(choices.length ? null : 'No active offices are available.');
+      setOfficeLoadError(choices.length ? null : 'No active geofences are available.');
     }).catch(cause => {
-      if (active) setOfficeLoadError(cause instanceof Error ? cause.message : 'Could not load offices.');
+      if (active) setOfficeLoadError(cause instanceof Error ? cause.message : 'Could not load geofences.');
     });
     return () => { active = false; };
   }, [api]);
@@ -69,7 +59,7 @@ export function GeoFencingScreen({deviceId, deviceName, registrationNotice}: {de
     ? {
         id: tracking.office.schoolId,
         name: tracking.officeName || OFFICE_NAME,
-        address: 'Configured office location',
+        address: 'Configured geofence',
         latitude: tracking.office.latitude,
         longitude: tracking.office.longitude,
         radiusMeters: tracking.office.radiusMeters,
@@ -78,8 +68,6 @@ export function GeoFencingScreen({deviceId, deviceName, registrationNotice}: {de
       }
     : null;
   const trackingOn = tracking.trackingStatus === 'tracking';
-  const outside = tracking.office != null && tracking.officePresence === 'outside';
-  const inside = tracking.office != null && !outside;
 
   return (
     <View style={styles.screen}>
@@ -90,7 +78,6 @@ export function GeoFencingScreen({deviceId, deviceName, registrationNotice}: {de
             ? [
                 {
                   school: officeSchool,
-                  distanceMeters: tracking.distanceMeters,
                   presence: tracking.officePresence,
                 },
               ]
@@ -107,32 +94,15 @@ export function GeoFencingScreen({deviceId, deviceName, registrationNotice}: {de
       <SafeAreaView style={styles.overlay} edges={['top', 'left', 'right']} pointerEvents="box-none">
         <View style={styles.top} pointerEvents="box-none">
           <View pointerEvents="box-none" style={styles.details}>
-            <Text style={styles.deviceName}>{deviceName}</Text>
+            <Text accessibilityLabel={`Truck: ${deviceName}`} style={styles.deviceName}>🚚 {deviceName}</Text>
             <Pressable accessibilityRole="button" onPress={() => setOfficePickerOpen(true)} style={styles.officePickerButton}>
-              <Text style={styles.officePickerLabel}>OFFICE</Text>
-              <Text style={styles.officePickerName}>{tracking.officeName || offices.find(item => item.id === selectedOfficeId)?.name || 'Choose an office'}⌄</Text>
+              <Text style={styles.officePickerLabel}>GEOFENCE</Text>
+              <Text style={styles.officePickerName}>{tracking.officeName || offices.find(item => item.id === selectedOfficeId)?.name || 'Choose a geofence'}⌄</Text>
             </Pressable>
             <Text style={styles.coords}>
               {formatCoordinate(tracking.location?.latitude)},{' '}
               {formatCoordinate(tracking.location?.longitude)}
             </Text>
-            <View
-              style={[
-                styles.status,
-                outside ? styles.statusOutside : inside ? styles.statusInside : styles.statusWaiting,
-              ]}>
-              <Text style={styles.statusLabel}>
-                {!tracking.office ? 'Office area' : outside ? 'Outside' : 'Inside'}
-              </Text>
-              <Text style={styles.statusBody}>
-                {presenceCopy(tracking.officePresence, tracking.office != null, trackingOn)}
-              </Text>
-              {officeSchool ? (
-                <Text style={styles.statusMeta}>
-                  {formatDistance(tracking.distanceMeters)} from center · {officeSchool.radiusMeters} m
-                </Text>
-              ) : null}
-            </View>
             {trackingOn && tracking.location && !tracking.accuracyAccepted ? (
               <Text style={styles.warning}>GPS accuracy is worse than 50 m.</Text>
             ) : null}
@@ -178,19 +148,19 @@ export function GeoFencingScreen({deviceId, deviceName, registrationNotice}: {de
       <Modal visible={officePickerOpen} transparent animationType="fade" onRequestClose={() => setOfficePickerOpen(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setOfficePickerOpen(false)}>
           <Pressable style={styles.officePickerModal} onPress={() => undefined}>
-            <Text style={styles.officePickerTitle}>Choose an office</Text>
-            <Text style={styles.officePickerHint}>Tracking and geofence alerts will use this office.</Text>
+            <Text style={styles.officePickerTitle}>Choose a geofence</Text>
+            <Text style={styles.officePickerHint}>Truck entry and exit alerts use this geofence.</Text>
             <ScrollView style={styles.officeList}>
               {offices.map(office => (
                 <Pressable key={office.id} onPress={() => selectOffice(office)} style={styles.officeOption}>
                   <View style={styles.officeOptionCopy}>
-                    <Text style={styles.officeOptionName}>{office.name || 'Office'}</Text>
+                    <Text style={styles.officeOptionName}>{office.name || 'Geofence'}</Text>
                     <Text style={styles.officeOptionMeta}>{office.radiusMeters} m geofence</Text>
                   </View>
                   {office.id === selectedOfficeId ? <Text style={styles.officeOptionSelected}>Selected</Text> : null}
                 </Pressable>
               ))}
-              {!offices.length ? <Text style={styles.officePickerHint}>{officeLoadError || 'Loading offices…'}</Text> : null}
+              {!offices.length ? <Text style={styles.officePickerHint}>{officeLoadError || 'Loading geofences…'}</Text> : null}
             </ScrollView>
             <Pressable onPress={() => setOfficePickerOpen(false)} style={styles.officePickerClose}><Text style={styles.officePickerCloseText}>Close</Text></Pressable>
           </Pressable>
@@ -263,35 +233,6 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     fontSize: 13,
     fontWeight: '700',
-  },
-  status: {
-    borderRadius: 14,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    gap: 2,
-  },
-  statusWaiting: {
-    backgroundColor: 'rgba(255,255,255,0.94)',
-  },
-  statusInside: {
-    backgroundColor: 'rgba(229, 244, 239, 0.96)',
-  },
-  statusOutside: {
-    backgroundColor: 'rgba(255, 244, 232, 0.96)',
-  },
-  statusLabel: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  statusBody: {
-    color: colors.text,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  statusMeta: {
-    color: colors.muted,
-    fontSize: 12,
   },
   warning: {
     alignSelf: 'flex-start',

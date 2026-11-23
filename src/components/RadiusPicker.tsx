@@ -15,7 +15,7 @@ export function RadiusPicker({value, options, onChange}: RadiusPickerProps) {
     <View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Office radius, ${value} meters`}
+        accessibilityLabel={`Geofence radius, ${value} meters`}
         accessibilityHint="Opens a list of fence sizes from 50 meters to 1000 meters"
         onPress={() => setOpen(true)}
         style={({pressed}) => [styles.trigger, pressed && styles.pressed]}>
@@ -35,7 +35,7 @@ export function RadiusPicker({value, options, onChange}: RadiusPickerProps) {
             onPress={() => setOpen(false)}
           />
           <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>Office radius</Text>
+            <Text style={styles.sheetTitle}>Geofence radius</Text>
             <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
               {options.map(option => {
                 const selected = option === value;

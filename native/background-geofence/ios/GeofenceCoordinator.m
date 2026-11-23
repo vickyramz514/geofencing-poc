@@ -157,18 +157,18 @@ static NSString *const kApiKey = @"geofencepoc.apiBaseUrl";
 
 - (NSString *)notificationBodyForEventType:(NSString *)eventType eventId:(NSString *)eventId {
   BOOL outside = [eventType isEqualToString:@"EXIT"];
-  NSString *verb = outside ? @"You left the" : @"You entered the";
+  NSString *verb = outside ? @"The truck left the" : @"The truck entered the";
   NSArray *regions = [[NSUserDefaults standardUserDefaults] arrayForKey:kRegionsKey];
   for (NSDictionary *region in regions) {
     NSString *schoolId = region[@"schoolId"];
     if (schoolId.length > 0 && [eventId hasPrefix:[schoolId stringByAppendingString:@":"]]) {
       double radius = [region[@"radiusMeters"] doubleValue];
       if (radius > 0) {
-        return [NSString stringWithFormat:@"%@ %.0f m office area.", verb, radius];
+        return [NSString stringWithFormat:@"%@ %.0f m geofence.", verb, radius];
       }
     }
   }
-  return [NSString stringWithFormat:@"%@ office area.", verb];
+  return [NSString stringWithFormat:@"%@ geofence.", verb];
 }
 
 - (void)showNotificationForEventType:(NSString *)eventType eventId:(NSString *)eventId {
@@ -188,7 +188,7 @@ static NSString *const kApiKey = @"geofencepoc.apiBaseUrl";
   [defaults setDouble:now forKey:@"geofencepoc.notifyAt"];
   BOOL outside = [eventType isEqualToString:@"EXIT"];
   UNMutableNotificationContent *content = [UNMutableNotificationContent new];
-  content.title = outside ? @"Outside the office area" : @"Inside the office area";
+  content.title = outside ? @"Truck left the geofence" : @"Truck entered the geofence";
   content.body = [self notificationBodyForEventType:eventType eventId:eventId];
   content.sound = [UNNotificationSound defaultSound];
   UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:eventId.length > 0 ? eventId : eventType
