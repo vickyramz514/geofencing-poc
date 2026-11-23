@@ -36,7 +36,7 @@ function createDeviceIcon(status: DeviceStatus, label: string) {
   const safeLabel = escapeHtml(label);
   return L.divIcon({
     className: 'live-marker-shell',
-    html: `<div class="device-marker-wrap"><span class="${classes[status]}">⌖</span><span class="device-marker-label" title="${safeLabel}">${safeLabel}</span></div>`,
+    html: `<div class="device-marker-wrap"><span class="${classes[status]}">🚚</span><span class="device-marker-label" title="${safeLabel}">${safeLabel}</span></div>`,
     iconSize: [220, 34],
     iconAnchor: [15, 17],
   });
@@ -46,7 +46,7 @@ function createOfficeIcon(name: string) {
   const safeName = escapeHtml(name);
   return L.divIcon({
     className: 'live-marker-shell office-marker-shell',
-    html: `<div class="office-marker-wrap"><span class="office-map-pin">⌂</span><span class="office-map-label" title="${safeName}">${safeName}</span></div>`,
+    html: `<div class="office-marker-wrap"><span class="office-map-pin">◎</span><span class="office-map-label" title="${safeName}">${safeName}</span></div>`,
     iconSize: [240, 36],
     iconAnchor: [13, 18],
   });
@@ -147,16 +147,16 @@ export function LiveLocationMap() {
       setDetails(current => ({ ...current, [item.deviceId!]: { ...item, ...deviceDetail } }));
       setDetailErrors(current => ({ ...current, [item.deviceId!]: '' }));
     } catch (cause) {
-      setDetailErrors(current => ({ ...current, [item.deviceId!]: cause instanceof Error ? cause.message : 'Device detail unavailable' }));
+      setDetailErrors(current => ({ ...current, [item.deviceId!]: cause instanceof Error ? cause.message : 'Truck detail unavailable' }));
     }
   };
 
   return <section className="panel live-location-module">
-    <div className="panel-header live-map-header"><div><h2>Live location tracking</h2><p>Latest device GPS with school boundaries · refreshes every 15 seconds</p></div><div className="live-map-state"><span className={error ? 'connection-dot offline' : 'connection-dot'} />{error ? 'API unavailable' : loading && !latest.length ? 'Loading' : 'Live'}</div></div>
+    <div className="panel-header live-map-header"><div><h2>Live truck tracking</h2><p>Truck GPS locations and geofence boundaries · refreshes every 15 seconds</p></div><div className="live-map-state"><span className={error ? 'connection-dot offline' : 'connection-dot'} />{error ? 'API unavailable' : loading && !latest.length ? 'Loading' : 'Live'}</div></div>
     {error && <div className="map-error"><b>Location data unavailable</b><span>{error}</span></div>}
     <div className="live-map-filters">
-      <label>School<select value={filters.schoolId} onChange={event => setFilter('schoolId', event.target.value)}><option value="">All schools</option>{schools.map(school => <option key={school.id} value={school.id}>{school.name || school.id}</option>)}</select></label>
-      <label>Device<select value={filters.deviceId ?? ''} onChange={event => setFilter('deviceId', event.target.value)}><option value="">All devices</option>{registeredDevices.map(item => <option key={item.deviceId} value={item.deviceId}>{item.deviceName || item.deviceId}</option>)}</select></label>
+      <label>Geofence<select value={filters.schoolId} onChange={event => setFilter('schoolId', event.target.value)}><option value="">All geofences</option>{schools.map(school => <option key={school.id} value={school.id}>{school.name || school.id}</option>)}</select></label>
+      <label>Truck<select value={filters.deviceId ?? ''} onChange={event => setFilter('deviceId', event.target.value)}><option value="">All trucks</option>{registeredDevices.map(item => <option key={item.deviceId} value={item.deviceId}>{item.deviceName || item.deviceId}</option>)}</select></label>
       <label>Status<select value={filters.status} onChange={event => setFilter('status', event.target.value)}><option value="ALL">All statuses</option><option value="INSIDE">Inside</option><option value="OUTSIDE">Outside</option><option value="STALE">Stale</option><option value="UNAVAILABLE">Unavailable</option></select></label>
       <label>History from<input type="date" value={filters.startDate} onChange={event => setFilter('startDate', event.target.value)} /></label>
       <label>History to<input type="date" value={filters.endDate} onChange={event => setFilter('endDate', event.target.value)} /></label>
@@ -173,17 +173,17 @@ export function LiveLocationMap() {
           const status = statusByDevice.get(id) ?? 'UNAVAILABLE';
           const detail = item.deviceId ? details[item.deviceId] : undefined;
           const school = schools.find(candidate => candidate.id === (detail?.schoolId || item.schoolId));
-          const deviceName = detail?.deviceName || item.deviceName || item.deviceId || 'Unknown device';
+          const deviceName = detail?.deviceName || item.deviceName || item.deviceId || 'Unknown truck';
           return <Marker key={id} position={[Number(item.latitude), Number(item.longitude)]} icon={createDeviceIcon(status, deviceName)} eventHandlers={{ click: () => void lookupDevice(item) }}>
-            <Popup><div className="device-popup"><b>Device {item.deviceId || 'ID unavailable'}</b>{(detail?.deviceName || item.deviceName) && <small className="device-name">{detail?.deviceName || item.deviceName}</small>}<span className={`device-status ${status.toLowerCase()}`}>{status}</span><dl><dt>School</dt><dd>{detail?.schoolName || item.schoolName || school?.name || school?.id || 'Unavailable'}</dd><dt>Latitude</dt><dd>{Number(detail?.latitude ?? item.latitude).toFixed(6)}</dd><dt>Longitude</dt><dd>{Number(detail?.longitude ?? item.longitude).toFixed(6)}</dd><dt>GPS accuracy</dt><dd>{detail?.accuracy ?? detail?.accuracyMeters ?? item.accuracy ?? item.accuracyMeters ?? 'Unavailable'} m</dd><dt>Last updated</dt><dd>{dateTime(detail?.timestamp || item.timestamp)}</dd></dl>{item.deviceId && detailErrors[item.deviceId] && <small className="popup-note">Device detail endpoint unavailable; showing latest-location response.</small>}</div></Popup>
+            <Popup><div className="device-popup"><b>Truck {item.deviceId || 'ID unavailable'}</b>{(detail?.deviceName || item.deviceName) && <small className="device-name">{detail?.deviceName || item.deviceName}</small>}<span className={`device-status ${status.toLowerCase()}`}>{status}</span><dl><dt>Geofence</dt><dd>{detail?.schoolName || item.schoolName || school?.name || school?.id || 'Unavailable'}</dd><dt>Latitude</dt><dd>{Number(detail?.latitude ?? item.latitude).toFixed(6)}</dd><dt>Longitude</dt><dd>{Number(detail?.longitude ?? item.longitude).toFixed(6)}</dd><dt>GPS accuracy</dt><dd>{detail?.accuracy ?? detail?.accuracyMeters ?? item.accuracy ?? item.accuracyMeters ?? 'Unavailable'} m</dd><dt>Last updated</dt><dd>{dateTime(detail?.timestamp || item.timestamp)}</dd></dl>{item.deviceId && detailErrors[item.deviceId] && <small className="popup-note">Truck detail endpoint unavailable; showing latest-location response.</small>}</div></Popup>
           </Marker>;
         })}
       </MapContainer> : <div className="map-no-coordinates">{loading ? 'Loading locations…' : 'No GPS coordinates returned for the current filters.'}</div>}
       {positions.length > 0 && <div className="map-controls"><button title="Zoom in" onClick={() => mapController?.zoomIn()}>+</button><button title="Zoom out" onClick={() => mapController?.zoomOut()}>−</button><button onClick={() => mapController?.fitAll()}>Fit all markers</button></div>}
     </div>
-    <div className="live-map-legend"><span><i className="status-swatch inside" />Inside</span><span><i className="status-swatch outside" />Outside</span><span><i className="status-swatch stale" />Stale / unavailable</span><span><i className="school-swatch" />School geofence</span><small>Data source: authenticated latest location, history, and school APIs</small></div>
+    <div className="live-map-legend"><span><i className="status-swatch inside" />Inside</span><span><i className="status-swatch outside" />Outside</span><span><i className="status-swatch stale" />Stale / unavailable</span><span><i className="school-swatch" />Geofence</span><small>Data source: authenticated latest location, history, and geofence APIs</small></div>
     <div className="history-heading"><div><b>Location history</b><small>{history.records.length} shown · {total} total</small></div><div className="history-pagination"><button disabled={page <= 1 || loading} onClick={() => setFilter('page', page - 1)}>Previous</button><span>Page {page} of {Math.max(totalPages, 1)}</span><button disabled={page >= totalPages || loading} onClick={() => setFilter('page', page + 1)}>Next</button></div></div>
-    {history.records.length ? <div className="table-scroll"><table><thead><tr><th>DEVICE</th><th>SCHOOL</th><th>COORDINATES</th><th>STATUS</th><th>GPS ACCURACY</th><th>RECORDED</th></tr></thead><tbody>{history.records.map((item, index) => {
+    {history.records.length ? <div className="table-scroll"><table><thead><tr><th>TRUCK</th><th>GEOFENCE</th><th>COORDINATES</th><th>STATUS</th><th>GPS ACCURACY</th><th>RECORDED</th></tr></thead><tbody>{history.records.map((item, index) => {
       const status = resolveStatus(item, schools);
       return <tr key={item.id || `${item.deviceId}-${item.timestamp}-${index}`}><td>{item.deviceName || item.deviceId || 'Unavailable'}</td><td>{item.schoolName || schools.find(school => school.id === item.schoolId)?.name || item.schoolId || 'Unavailable'}</td><td className="coordinates">{hasCoordinates(item) ? coordinate(item.latitude, item.longitude) : 'Unavailable'}</td><td><span className={`device-status ${status.toLowerCase()}`}>{status}</span></td><td>{item.accuracy ?? item.accuracyMeters ?? 'Unavailable'}{item.accuracy != null || item.accuracyMeters != null ? ' m' : ''}</td><td>{dateTime(item.timestamp)}</td></tr>;
     })}</tbody></table></div> : <div className="map-empty-state">{loading ? 'Loading location history…' : 'No location history matches these filters.'}</div>}
