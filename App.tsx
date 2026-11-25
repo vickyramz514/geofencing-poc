@@ -57,7 +57,7 @@ function DeviceSetup({onRegistered}: {onRegistered: (profile: DeviceProfile) => 
 
   return (
     <View style={styles.setup}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <StatusBar barStyle="light-content" backgroundColor="#081628" />
       <View style={styles.card}>
         <Text style={styles.eyebrow}>TRUCK TRACKING</Text>
         <Text style={styles.title}>Register a truck</Text>
@@ -67,7 +67,7 @@ function DeviceSetup({onRegistered}: {onRegistered: (profile: DeviceProfile) => 
           value={deviceName}
           onChangeText={setDeviceName}
           placeholder="Truck name or number"
-          placeholderTextColor={colors.muted}
+          placeholderTextColor="#acc3db"
           maxLength={60}
           style={styles.input}
           autoCapitalize="words"
@@ -117,19 +117,19 @@ function App() {
 }
 
 const styles = StyleSheet.create({
-  setup: {flex: 1, backgroundColor: colors.background, justifyContent: 'center', padding: spacing.lg},
-  loading: {flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', gap: spacing.md},
-  card: {backgroundColor: colors.white, borderRadius: 22, padding: spacing.lg, gap: spacing.md, elevation: 3},
-  eyebrow: {color: colors.primary, fontSize: 12, fontWeight: '800', letterSpacing: 1.2},
-  title: {color: colors.text, fontSize: 26, fontWeight: '800'},
-  description: {color: colors.muted, fontSize: 15, lineHeight: 22},
-  input: {minHeight: 52, borderWidth: 1, borderColor: '#D7DEE7', borderRadius: 12, paddingHorizontal: spacing.md, color: colors.text, fontSize: 16},
-  button: {minHeight: 52, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, paddingHorizontal: spacing.md},
+  setup: {flex: 1, backgroundColor: '#081628', justifyContent: 'center', padding: spacing.lg},
+  loading: {flex: 1, backgroundColor: '#081628', justifyContent: 'center', alignItems: 'center', gap: spacing.md},
+  card: {backgroundColor: '#102741', borderColor: '#325777', borderWidth: 1, borderRadius: 22, padding: spacing.lg, gap: spacing.md, elevation: 3},
+  eyebrow: {color: '#16c4ff', fontSize: 12, fontWeight: '800', letterSpacing: 1.2},
+  title: {color: '#f4f8ff', fontSize: 26, fontWeight: '800'},
+  description: {color: '#acc3db', fontSize: 15, lineHeight: 22},
+  input: {minHeight: 52, borderWidth: 1, borderColor: '#325777', borderRadius: 12, paddingHorizontal: spacing.md, color: '#f4f8ff', fontSize: 16},
+  button: {minHeight: 52, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#008cef', paddingHorizontal: spacing.md},
   buttonText: {color: colors.white, fontSize: 16, fontWeight: '700'},
   disabled: {opacity: 0.5},
   pressed: {opacity: 0.82},
-  error: {color: colors.danger, fontSize: 14, lineHeight: 20},
-  helper: {color: colors.muted, fontSize: 13},
+  error: {color: '#ff8796', fontSize: 14, lineHeight: 20},
+  helper: {color: '#acc3db', fontSize: 13},
 });
 
 export default App;

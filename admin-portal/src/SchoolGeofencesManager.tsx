@@ -21,7 +21,7 @@ interface FormState {
 const blankForm = (): FormState => ({ name: 'Colaninfo Tech', latitude: '13.067930644538661', longitude: '80.25592817406542', radiusMeters: '200', enabled: true, geofenceType: 'CIRCLE', geometry: null, assignedDevices: [] });
 const formatCoordinate = (value: number) => Number(value).toFixed(6);
 
-export function SchoolGeofencesManager() {
+export function SchoolGeofencesManager({ startCreating = false }: { startCreating?: boolean }) {
   const [schools, setSchools] = useState<SchoolGeofence[]>([]);
   const [search, setSearch] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,7 +32,7 @@ export function SchoolGeofencesManager() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(startCreating);
   const [editing, setEditing] = useState<SchoolGeofence | null>(null);
   const [form, setForm] = useState<FormState>(blankForm);
   const [validation, setValidation] = useState<string[]>([]);

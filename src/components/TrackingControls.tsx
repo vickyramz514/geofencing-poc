@@ -44,7 +44,7 @@ export function TrackingControls({
           (!tracking || starting) && styles.disabled,
           pressed && tracking && styles.pressed,
         ]}>
-        <Text style={styles.primaryText}>■  Stop Tracking</Text>
+        <Text style={styles.primaryText}>■  Stop</Text>
       </Pressable>
     </View>
   );
@@ -53,21 +53,22 @@ export function TrackingControls({
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.xs,
   },
   button: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 14,
+    minHeight: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
   },
   start: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#008cef',
   },
   stop: {
-    backgroundColor: colors.danger,
+    backgroundColor: '#182f47',
+    borderColor: '#466381',
+    borderWidth: 1,
   },
   disabled: {
     opacity: 0.45,
@@ -77,7 +78,7 @@ const styles = StyleSheet.create({
   },
   primaryText: {
     color: colors.white,
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: '700',
   },
 });

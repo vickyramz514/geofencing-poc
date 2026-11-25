@@ -1,13 +1,14 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {Platform, Pressable, StyleSheet, Text, View} from 'react-native';
 import MapView, {
   Circle,
+  Polyline,
   Marker,
   PROVIDER_DEFAULT,
   PROVIDER_GOOGLE,
   type Region,
 } from 'react-native-maps';
-import type {LocationFix, Presence, School} from '../types';
+import type {Coordinates, LocationFix, Presence, School} from '../types';
 import {colors, spacing} from '../theme';
 
 export interface SchoolMapItem {
@@ -23,20 +24,23 @@ interface SchoolMapProps {
   onSelectSchool: (schoolId: string) => void;
   focus?: {latitude: number; longitude: number} | null;
   fenceRadiusMeters?: number;
+  deviceName: string;
+  trail: Coordinates[];
+  fitRequest: number;
 }
 
 const MIN_DELTA = 0.0006;
 const MAX_DELTA = 0.5;
 
-function circleColors(presence: Presence | 'unknown'): {fill: string; stroke: string} {
-  if (presence === 'inside') {
-    return {fill: 'rgba(15, 110, 86, 0.28)', stroke: '#0F6E56'};
-  }
-  if (presence === 'outside') {
-    return {fill: 'rgba(180, 83, 9, 0.18)', stroke: '#B54708'};
-  }
-  return {fill: 'rgba(152, 162, 179, 0.18)', stroke: '#98A2B3'};
-}
+const darkMap = [
+  {elementType: 'geometry', stylers: [{color: '#142b45'}]},
+  {elementType: 'labels.text.fill', stylers: [{color: '#9db8d1'}]},
+  {elementType: 'labels.text.stroke', stylers: [{color: '#0a1b31'}]},
+  {featureType: 'road', elementType: 'geometry', stylers: [{color: '#2a4b6f'}]},
+  {featureType: 'road.highway', elementType: 'geometry', stylers: [{color: '#476888'}]},
+  {featureType: 'water', elementType: 'geometry', stylers: [{color: '#073d78'}]},
+  {featureType: 'poi.park', elementType: 'geometry', stylers: [{color: '#103d3e'}]},
+];
 
 function regionAround(
   center: {latitude: number; longitude: number},
@@ -66,12 +70,15 @@ export function SchoolMap({
   onSelectSchool,
   focus,
   fenceRadiusMeters = 100,
+  deviceName,
+  trail,
+  fitRequest,
 }: SchoolMapProps) {
   const provider = Platform.OS === 'android' ? PROVIDER_GOOGLE : PROVIDER_DEFAULT;
   const mapRef = useRef<MapView>(null);
   const regionRef = useRef<Region>(
     regionAround(
-      focus ?? location ?? {latitude: 20, longitude: 78},
+      focus ?? location ?? {latitude: 13.0566, longitude: 80.2537},
       focus ? deltaForRadius(fenceRadiusMeters) : 0.04,
     ),
   );
@@ -136,14 +143,21 @@ export function SchoolMap({
     );
   };
 
-  const fitFence = () => {
+  const fitFence = useCallback(() => {
     const center = focus ?? location;
     if (!center) {
       return;
     }
     setFollow(false);
     animateTo(regionAround(center, deltaForRadius(fenceRadiusMeters)), 500);
-  };
+  }, [focus, location, fenceRadiusMeters]);
+
+  const handledFit = useRef(0);
+  useEffect(() => {
+    if (fitRequest === handledFit.current) return;
+    handledFit.current = fitRequest;
+    fitFence();
+  }, [fitRequest, fitFence]);
 
   const mapTypes = ['standard', 'satellite', 'hybrid'] as const;
   const nextMapType = mapTypes[(mapTypes.indexOf(mapType) + 1) % mapTypes.length];
@@ -156,6 +170,8 @@ export function SchoolMap({
         style={styles.map}
         initialRegion={regionRef.current}
         mapType={mapType}
+        userInterfaceStyle="dark"
+        customMapStyle={Platform.OS === 'android' && mapType === 'standard' ? darkMap : undefined}
         showsMyLocationButton={false}
         showsCompass
         zoomEnabled
@@ -163,12 +179,13 @@ export function SchoolMap({
         rotateEnabled
         pitchEnabled
         toolbarEnabled={false}
-        mapPadding={{top: 168, right: 64, bottom: 96, left: 16}}
+        mapPadding={{top: 76, right: 52, bottom: 44, left: 16}}
         onPanDrag={() => setFollow(false)}
         onTouchStart={() => setFollow(false)}
         onRegionChangeComplete={region => {
           regionRef.current = region;
         }}>
+        {trail.length > 1 && <Polyline coordinates={trail} strokeColor="#10bcff" strokeWidth={4} />}
         {location ? (
           <>
             <Circle
@@ -182,7 +199,7 @@ export function SchoolMap({
               <Marker
                 coordinate={{latitude: location.latitude, longitude: location.longitude}}
                 anchor={{x: 0.5, y: 0.5}}
-                title="Truck location"
+                title={deviceName}
                 zIndex={1}>
                 <View style={styles.truckMarker}>
                   <Text style={styles.truckIcon}>🚚</Text>
@@ -192,7 +209,6 @@ export function SchoolMap({
           </>
         ) : null}
         {schools.map(item => {
-          const palette = circleColors(item.presence);
           const selected = item.school.id === selectedSchoolId;
           return (
             <React.Fragment key={item.school.id}>
@@ -202,8 +218,8 @@ export function SchoolMap({
                   longitude: item.school.longitude,
                 }}
                 radius={item.school.radiusMeters}
-                fillColor={palette.fill}
-                strokeColor={palette.stroke}
+                fillColor="rgba(0, 174, 255, 0.24)"
+                strokeColor="#1ad3ff"
                 strokeWidth={selected ? 3 : 2}
               />
               <Marker
@@ -221,14 +237,14 @@ export function SchoolMap({
       </MapView>
 
       <View style={styles.controls}>
-        <MapButton label="+" accessibilityLabel="Zoom in" onPress={() => zoomBy(0.5)} />
-        <MapButton label="−" accessibilityLabel="Zoom out" onPress={() => zoomBy(2)} />
-        <MapButton label="Fit" accessibilityLabel="Fit the geofence" onPress={fitFence} />
         <MapButton
-          label={optionsOpen ? 'Less' : 'More'}
+          label={optionsOpen ? '×' : '▱'}
           accessibilityLabel={optionsOpen ? 'Hide map options' : 'Show map options'}
           onPress={() => setOptionsOpen(open => !open)}
         />
+        <MapButton label="+" accessibilityLabel="Zoom in" onPress={() => zoomBy(0.5)} />
+        <MapButton label="−" accessibilityLabel="Zoom out" onPress={() => zoomBy(2)} />
+        <MapButton label="⌖" accessibilityLabel="Fit the geofence" onPress={fitFence} />
         {optionsOpen ? (
           <View style={styles.options}>
             <MapButton
@@ -278,7 +294,7 @@ function MapButton({
 const styles = StyleSheet.create({
   wrap: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: '#102741',
   },
   map: {
     position: 'absolute',
@@ -291,9 +307,9 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    borderColor: colors.primary,
+    borderColor: '#29c7ff',
     borderWidth: 2,
-    backgroundColor: colors.white,
+    backgroundColor: '#073c70',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -302,7 +318,7 @@ const styles = StyleSheet.create({
   },
   controls: {
     position: 'absolute',
-    top: 108,
+    top: 10,
     right: spacing.md,
     gap: spacing.sm,
     alignItems: 'flex-end',
@@ -316,7 +332,9 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: spacing.sm,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.94)',
+    backgroundColor: '#08182bed',
+    borderColor: '#3c5d7c',
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#101828',
@@ -332,8 +350,8 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   controlText: {
-    color: colors.text,
-    fontSize: 14,
+    color: colors.white,
+    fontSize: 18,
     fontWeight: '800',
   },
   controlTextActive: {

@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import L, { type LatLngExpression } from 'leaflet';
 import { Circle, CircleMarker, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer, useMap } from 'react-leaflet';
-import { adminDataUrl, apiBaseUrl, downloadCsv, exportGeofenceEvents, fetchAdminData } from './api';
+import { adminDataUrl, downloadCsv, fetchAdminData } from './api';
 import type { AdminData, GeofenceEvent, LocationRecord, SchoolGeofence } from './api';
 import { LiveLocationMap } from './LiveLocationMap';
 import { DeviceManagementPage } from './DeviceManagementPage';
@@ -10,6 +10,7 @@ import { GeofenceEventsPage as ApiGeofenceEventsPage } from './GeofenceEventsPag
 import { LocationHistoryPage as ApiLocationHistoryPage } from './LocationHistoryPage';
 import 'leaflet/dist/leaflet.css';
 import './styles.css';
+import './fleet.css';
 
 const SchoolGeofencesManager = lazy(() => import('./SchoolGeofencesManager').then(module => ({ default: module.SchoolGeofencesManager })));
 
@@ -25,8 +26,8 @@ const EMPTY_DATA: AdminData = {
   },
 };
 const navItems: Array<[Section, string]> = [
-  ['Overview', '▦'], ['Live truck map', '⌖'], ['Geofences', '◎'], ['Trucks', '🚚'],
-  ['Geofence events', '⌁'], ['Location history', '◷'],
+  ['Overview', '⌂'], ['Live truck map', '⌖'], ['Trucks', '♧'], ['Geofences', '◎'],
+  ['Location history', '◷'], ['Geofence events', '♧'], ['Reports', '▥'],
 ];
 const dateTime = (value?: string) => value && !Number.isNaN(new Date(value).getTime())
   ? new Date(value).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -39,7 +40,6 @@ const timeAgo = (value?: string) => {
   return mins < 1 ? 'Just now' : mins < 60 ? `${mins}m ago` : `${Math.floor(mins / 60)}h ago`;
 };
 const coordinate = (lat: number, lon: number) => `${Number(lat).toFixed(5)}, ${Number(lon).toFixed(5)}`;
-const schoolId = (event: GeofenceEvent) => event.schoolName ? `${event.schoolName} (${event.schoolId})` : event.schoolId;
 const mapIcon = (className: string, text: string) => L.divIcon({
   className: 'map-marker-shell', html: `<span class="${className}">${text}</span>`,
   iconSize: [26, 26], iconAnchor: [13, 13],
@@ -78,9 +78,16 @@ function App() {
   const [error, setError] = useState('');
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [section, setSection] = useState<Section>('Overview');
+  const [createGeofence, setCreateGeofence] = useState(false);
+  const [search, setSearch] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const connected = !error && lastSync !== null;
+
+  function openSection(next: Section) {
+    setCreateGeofence(false);
+    setSection(next);
+  }
 
   async function refresh(signal?: AbortSignal) {
     try {
@@ -112,18 +119,6 @@ function App() {
 
   const locations = useMemo(() => data.locations.slice().sort((a, b) => timeValue(a.timestamp) - timeValue(b.timestamp)), [data.locations]);
   const events = useMemo(() => data.events.slice().sort((a, b) => timeValue(a.eventTime) - timeValue(b.eventTime)), [data.events]);
-  const latest = locations.at(-1);
-  const todayEvents = events.filter(event => isToday(event.eventTime));
-  const presentCount = data.offices.filter(item => ['PRESENT', 'INSIDE'].includes(String(item.presence).toUpperCase())).length;
-  const filteredLocations = locations.filter(item => {
-    return inDateRange(item.timestamp, fromDate, toDate);
-  }).reverse();
-
-  const exportEvents = () => void exportGeofenceEvents({ from: fromDate ? `${fromDate}T00:00:00.000Z` : undefined, to: toDate ? `${toDate}T23:59:59.999Z` : undefined });
-  const exportLocations = () => downloadCsv('location-history.csv', [
-    ['Truck ID', 'Latitude', 'Longitude', 'Accuracy', 'Heading', 'Timestamp', 'Received at'],
-    ...filteredLocations.map(item => [item.deviceId, item.latitude, item.longitude, item.accuracy ?? item.accuracyMeters, item.heading, item.timestamp, item.receivedAt]),
-  ]);
   const exportReport = () => {
     const reportRows: unknown[][] = [['Record type', 'ID', 'Name / geofence', 'Status / event', 'Latitude', 'Longitude', 'Time']];
     data.offices.forEach(item => reportRows.push(['Geofence', item.id, item.name, item.presence, item.latitude, item.longitude, item.presenceUpdatedAt]));
@@ -136,51 +131,132 @@ function App() {
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark" aria-hidden="true">🚚</span><span>Truck<span className="brand-dot"> Tracking</span></span></div>
-      <div className="workspace-label">DATA SOURCE</div>
-      <div className="workspace"><div className="workspace-icon">API</div><div><b>Geofencing API</b><small>{apiBaseUrl}</small></div></div>
-      <div className="nav-label">OPERATIONS</div>
-      <nav>{navItems.map(([name, icon]) => <button key={name} className={`nav-item ${section === name ? 'selected' : ''}`} onClick={() => setSection(name)}><span className="nav-icon" aria-hidden="true">{icon}</span>{name}{name === 'Geofence events' && <span className="nav-count">{data.eventPage.total ?? data.events.length}</span>}</button>)}</nav>
-      <div className="sidebar-bottom"><div className="connection-card"><span className={connected ? 'connection-dot' : 'connection-dot offline'}></span><div><b>{connected ? 'API connected' : error ? 'API unavailable' : 'Connecting to API'}</b><small>{lastSync ? `Synced ${timeAgo(lastSync.toISOString())}` : 'Waiting for first sync'}</small></div></div></div>
+      <nav>{navItems.map(([name, icon]) => <button key={name} className={`nav-item ${section === name ? 'selected' : ''}`} aria-current={section === name ? 'page' : undefined} onClick={() => openSection(name)}><span className="nav-icon" aria-hidden="true">{icon}</span>{name === 'Geofence events' ? 'Alerts & Events' : name === 'Live truck map' ? 'Live Fleet Map' : name === 'Location history' ? 'Location History' : name}{name === 'Geofence events' && <span className="nav-count">{data.eventPage.total ?? data.events.length}</span>}</button>)}</nav>
+      <div className="sidebar-bottom"><div className="tracking-summary"><span aria-hidden="true">⌖</span><b>GPS Fleet Tracking</b><small>Live locations and geofence events</small></div><div className="connection-card"><span className={connected ? 'connection-dot' : 'connection-dot offline'}></span><div><b>{connected ? 'API connected' : error ? 'API unavailable' : 'Connecting to API'}</b><small>{lastSync ? `Synced ${timeAgo(lastSync.toISOString())}` : 'Waiting for first sync'}</small></div></div></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div className="crumb">Truck tracking <span>/</span> <b>{section}</b></div><div className="top-actions"><div className="api-indicator"><i className={connected ? '' : 'offline'}></i>{connected ? 'API connected' : error ? 'API disconnected' : 'Connecting'}</div></div></header>
+      <header className="fleet-header">
+        <div><h1>{section}</h1><p>{sectionDescription(section)}</p></div>
+        <div className="fleet-header-actions">
+          {section === 'Overview' && <SearchInput value={search} onChange={setSearch} placeholder="Search trucks or geofences…" />}
+          <button className="fleet-icon-button" aria-label="Alerts and events" onClick={() => setSection('Geofence events')}>♧</button>
+          <button className="fleet-icon-button" aria-label="Refresh dashboard" title="Refresh dashboard" onClick={() => void refresh()}>⟳</button>
+          <div className="fleet-profile"><span aria-hidden="true">GA</span><div><b>Geofence Admin</b><small>Admin</small></div></div>
+        </div>
+      </header>
       <div className="content">
         {error && <div className="error-banner"><span>⚠</span><div><b>Data connection unavailable</b><small>{error}</small></div><button onClick={() => void refresh()}>Retry</button></div>}
-      <div className="page-heading"><div><div className="eyebrow">{new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase()}</div><h1>{section}</h1><p>{sectionDescription(section)}</p></div><div className="heading-actions"><div className="sync-status"><span className="sync-dot"></span>Updated {lastSync ? timeAgo(lastSync.toISOString()) : '—'}</div><button className="button secondary" onClick={() => void refresh()}><span className="refresh">⟳</span> Refresh</button>{!['Geofence events', 'Location history'].includes(section) && <button className="button primary" onClick={exportReport}><span>↓</span> Export CSV</button>}</div></div>
+        {section !== 'Overview' && !['Geofence events', 'Location history', 'Reports'].includes(section) && <div className="section-actions"><button className="button primary" onClick={exportReport}>↓ Export CSV</button></div>}
         {!loaded && !error ? <LoadingState /> : <>
-          {section === 'Overview' && <Overview data={data} latest={latest} todayEvents={todayEvents} presentCount={presentCount} locations={locations} onOpen={setSection} />}
+          {section === 'Overview' && <Overview data={data} events={events} locations={locations} onOpen={openSection} onCreateGeofence={() => { setCreateGeofence(true); setSection('Geofences'); }} search={search} connected={connected} />}
           {section === 'Live truck map' && <LiveLocationMap />}
-          {section === 'Geofences' && <Suspense fallback={<LoadingState />}><SchoolGeofencesManager /></Suspense>}
+          {section === 'Geofences' && <Suspense fallback={<LoadingState />}><SchoolGeofencesManager startCreating={createGeofence} /></Suspense>}
           {section === 'Trucks' && <DeviceManagementPage />}
           {section === 'Geofence events' && <ApiGeofenceEventsPage schools={data.offices} />}
           {section === 'Location history' && <ApiLocationHistoryPage schools={data.offices} />}
           {section === 'Deliveries' && <DeliveriesPage deliveries={data.deliveries.slice().reverse()} loaded={loaded} total={data.deliveryPage.total} />}
           {section === 'Reports' && <ReportsPage data={data} fromDate={fromDate} toDate={toDate} setFromDate={setFromDate} setToDate={setToDate} onExport={exportReport} />}
         </>}
-        <footer><span>Truck Tracking Admin</span><span>Auto-refreshes every 15 seconds <i className="live-dot" /></span><span>Last sync {lastSync ? dateTime(lastSync.toISOString()) : '—'}</span></footer>
+        <footer><span>Truck Tracking Admin</span><span>Auto-refreshes every minute <i className="live-dot" /></span><span>Last sync {lastSync ? dateTime(lastSync.toISOString()) : '—'}</span></footer>
       </div>
     </main>
   </div>;
 }
 
-function Overview({ data, latest, todayEvents, presentCount, locations, onOpen }: { data: AdminData; latest?: LocationRecord; todayEvents: GeofenceEvent[]; presentCount: number; locations: LocationRecord[]; onOpen: (section: Section) => void }) {
+function Overview({ data, events, locations, onOpen, onCreateGeofence, search, connected }: {
+  data: AdminData; events: GeofenceEvent[]; locations: LocationRecord[];
+  onOpen: (section: Section) => void; onCreateGeofence: () => void; search: string; connected: boolean;
+}) {
   const metrics = data.dashboard.metrics;
-  return <>
-    <div className="stat-grid">
-      <Stat title="Registered trucks" value={metrics.totalRegisteredDevices} note={`${metrics.activeDevices} active`} icon="🚚" tone="blue" badge="TRUCKS" />
-      <Stat title="Geofences" value={metrics.totalConfiguredGeofences} note={`${presentCount} marked inside`} icon="◎" tone="amber" badge="GEOFENCES" />
-      <Stat title="Trucks inside geofences" value={metrics.devicesInsideGeofences} note="Based on latest GPS fixes" icon="◉" tone="green" badge="INSIDE" />
-      <Stat title="Trucks outside geofences" value={metrics.devicesOutsideGeofences} note={`${metrics.devicesWithStaleGps} trucks have stale GPS`} icon="⌖" tone="violet" badge="GPS" />
-      <Stat title="Today's entries" value={metrics.todaysEntryEvents} note="UTC calendar day" icon="↘" tone="green" badge="ENTER" />
-      <Stat title="Today's exits" value={metrics.todaysExitEvents} note="UTC calendar day" icon="↗" tone="amber" badge="EXIT" />
-      <Stat title="Latest GPS updates" value={data.dashboard.latestGpsLocations.pagination.total ?? data.dashboard.latestGpsLocations.records.length} note={latest ? timeAgo(latest.timestamp) : 'No GPS updates received'} icon="⌖" tone="blue" badge="LATEST" />
+  const [truckId, setTruckId] = useState('');
+  const query = search.trim().toLowerCase();
+  const matches = (...values: Array<string | null | undefined>) => values.some(value => value?.toLowerCase().includes(query));
+  const latestByTruck = new Map<string, LocationRecord>();
+  const newest = [...locations, ...data.dashboard.latestGpsLocations.records].sort((a, b) => timeValue(b.timestamp) - timeValue(a.timestamp));
+  for (const fix of newest) {
+    if (fix.deviceId && !latestByTruck.has(fix.deviceId)) latestByTruck.set(fix.deviceId, fix);
+  }
+  const trucks = [...latestByTruck.values()].filter(item => !query || matches(item.deviceId, item.deviceName, item.schoolName));
+  const offices = data.offices.filter(item => !query || matches(item.id, item.name));
+  const selectedTruck = truckId && trucks.some(item => item.deviceId === truckId) ? truckId : '';
+  const truckIds = new Set(trucks.map(item => item.deviceId));
+  const visibleLocations = locations.filter(item => selectedTruck ? item.deviceId === selectedTruck : !query || truckIds.has(item.deviceId));
+  const matchingEvents = events.filter(item => !query || matches(item.deviceId, item.schoolId, item.schoolName) || truckIds.has(item.deviceId));
+  const status = [
+    { label: 'Active', value: metrics.activeDevices, color: '#13cf8a' },
+    { label: 'Other registered trucks', value: Math.max(0, metrics.totalRegisteredDevices - metrics.activeDevices), color: '#789ac4' },
+  ];
+  const total = status.reduce((sum, item) => sum + item.value, 0);
+  const activeShare = total ? status[0].value / total * 100 : 0;
+  const routeTruck = selectedTruck || [...visibleLocations].reverse().find(item => item.deviceId && validCoordinates(item))?.deviceId;
+  const route = routeTruck ? visibleLocations.filter(item => item.deviceId === routeTruck && validCoordinates(item)) : [];
+  const routeStops = route.length > 2 ? [route[0], route[Math.floor(route.length / 2)], route[route.length - 1]] : route;
+  const stats = [
+    { label: 'Total Trucks', value: metrics.totalRegisteredDevices, icon: '▣', tone: 'blue' },
+    { label: 'Active', value: metrics.activeDevices, icon: '▷', tone: 'green' },
+    { label: 'Stale GPS', value: metrics.devicesWithStaleGps, icon: 'Ⅱ', tone: 'amber' },
+    { label: 'Alerts Today', value: metrics.todaysEntryEvents + metrics.todaysExitEvents, icon: '⚠', tone: 'red' },
+    { label: 'Geofences', value: metrics.totalConfiguredGeofences, icon: '⌖', tone: 'blue' },
+  ];
+  return <div className="fleet-overview">
+    <div className="fleet-stats">{stats.map(item => <section className="fleet-stat" key={item.label}>
+      <span className={`fleet-stat-icon ${item.tone}`} aria-hidden="true">{item.icon}</span>
+      <div><strong>{item.value}</strong><span>{item.label}</span></div>
+    </section>)}</div>
+    <div className="fleet-primary-grid">
+      <section className="panel fleet-map-panel">
+        <div className="fleet-panel-heading">
+          <div><h2>Live Fleet Map {connected && <span className="fleet-live">● Live</span>}</h2><p>Truck locations, geofences and route trails</p></div>
+          <div className="fleet-map-actions"><select aria-label="Filter map by truck" value={selectedTruck} onChange={event => setTruckId(event.target.value)}>
+            <option value="">All trucks</option>
+            {trucks.map(item => <option key={item.deviceId} value={item.deviceId ?? ''}>{item.deviceName || item.deviceId}</option>)}
+          </select><button className="fleet-icon-button" aria-label="Open live fleet map" onClick={() => onOpen('Live truck map')}>⛶</button></div>
+        </div>
+        <TrackingMap offices={offices} office={query ? null : data.office} locations={visibleLocations} deviceLocations={trucks.filter(item => !selectedTruck || item.deviceId === selectedTruck)} events={matchingEvents.filter(item => !selectedTruck || item.deviceId === selectedTruck)} latest={visibleLocations.at(-1)} />
+        <MapLegend />
+      </section>
+      <div className="fleet-side-grid">
+        <section className="panel fleet-status-panel">
+          <PanelHeader title="Fleet Status" />
+          <div className="fleet-status-body">
+            <div className="fleet-donut" style={{ background: total ? `conic-gradient(#13cf8a 0 ${activeShare}%, #789ac4 ${activeShare}% 100%)` : '#26405b' }}>
+              <div><strong>{metrics.totalRegisteredDevices}</strong><span>Trucks</span></div>
+            </div>
+            <ul>{status.map(item => <li key={item.label}><i style={{ background: item.color }} /><span>{item.label}</span><b>{item.value}</b></li>)}</ul>
+          </div>
+        </section>
+        <section className="panel fleet-activity-panel"><PanelHeader title="Fleet Activity" subtitle="Geofence events · Last 24 hours" /><ActivityChart events={events} /></section>
+      </div>
     </div>
-    <div className="dashboard-grid">
-      <section className="panel map-panel"><PanelHeader title="Live fleet map" subtitle="Truck locations, geofence boundaries, and entry and exit events" action="Open map" onAction={() => onOpen('Live truck map')} /><TrackingMap offices={data.offices} office={data.office} locations={locations} deviceLocations={data.dashboard.latestGpsLocations.records} events={data.events} latest={latest} /><MapLegend /></section>
-      <section className="panel activity-panel"><PanelHeader title="Geofence activity" subtitle="Recent events from the current history page" /><ActivityChart events={todayEvents} /><div className="activity-summary"><span className="activity-key"><i className="enter-key" />Today's entries (UTC)</span><b>{metrics.todaysEntryEvents}</b><span className="activity-key"><i className="exit-key" />Today's exits (UTC)</span><b>{metrics.todaysExitEvents}</b></div></section>
+    <div className="fleet-secondary-grid">
+      <section className="panel">
+        <PanelHeader title="Recent Trucks" action="View all" onAction={() => onOpen('Trucks')} />
+        {trucks.length ? <div className="table-scroll fleet-truck-table"><table><thead><tr><th>Truck</th><th>Geofence</th><th>Last GPS</th><th>Map</th></tr></thead>
+          <tbody>{trucks.slice(0, 5).map(item => <tr key={item.deviceId}><td><b>{item.deviceName || item.deviceId}</b></td><td>{item.schoolName || item.schoolId || '—'}</td><td>{timeAgo(item.timestamp)}</td><td><button className="text-link" aria-label={`Show ${item.deviceName || item.deviceId} on map`} onClick={() => setTruckId(item.deviceId || '')}>⌖</button></td></tr>)}</tbody>
+        </table></div> : <EmptyState loaded title="No truck locations" detail="GPS updates will appear here when available." />}
+      </section>
+      <section className="panel">
+        <PanelHeader title={`Geofences (${metrics.totalConfiguredGeofences})`} action="View all" onAction={() => onOpen('Geofences')} />
+        {offices.length ? <OfficeList offices={offices.slice(0, 4)} /> : <EmptyState loaded title="No geofences to show" detail="Configured geofences appear here." />}
+        <button className="button primary fleet-manage" onClick={onCreateGeofence}>＋ Create geofence</button>
+      </section>
+      <section className="panel">
+        <PanelHeader title="Alerts & Events" action="View all" onAction={() => onOpen('Geofence events')} />
+        {matchingEvents.length ? <ul className="fleet-event-list">{matchingEvents.slice(-4).reverse().map((event, index) => <li key={event.eventId || index}>
+          <span className={`fleet-event-icon ${event.eventType === 'ENTER' ? 'enter' : 'exit'}`} aria-hidden="true">{event.eventType === 'ENTER' ? '↘' : '⚠'}</span>
+          <div><b>{event.eventType === 'ENTER' ? 'Truck entered geofence' : event.eventType === 'EXIT' ? 'Truck exited geofence' : event.eventType || 'Geofence event'}</b><small>{event.schoolName || event.schoolId}{event.deviceId ? ` · ${latestByTruck.get(event.deviceId)?.deviceName || event.deviceId}` : ''}</small></div><time>{timeAgo(event.eventTime)}</time>
+        </li>)}</ul> : <EmptyState loaded title="No geofence events to show" detail="Entry and exit events appear here." />}
+      </section>
     </div>
-    <div className="lower-grid"><section className="panel"><PanelHeader title="Geofences" subtitle="Configured locations and presence" action="Manage" onAction={() => onOpen('Geofences')} />{data.offices.length ? <OfficeList offices={data.offices.slice(0, 4)} /> : <EmptyState loaded title="No geofences configured" detail="The API returned no configured geofences." />}</section><section className="panel"><PanelHeader title="Recent geofence events" subtitle="Latest entry and exit activity" action="View all" onAction={() => onOpen('Geofence events')} />{data.events.length ? <EventsTable events={data.events.slice().reverse().slice(0, 4)} /> : <EmptyState loaded title="No geofence events" detail="Entry and exit events will appear when reported by the API." />}</section></div>
-  </>;
+    <section className="panel fleet-route-panel">
+      <PanelHeader title="Route Activity" subtitle="Recent GPS checkpoints" action="Location history" onAction={() => onOpen('Location history')} />
+      {routeStops.length > 1 ? <div className="fleet-route">
+        <b>{latestByTruck.get(routeTruck || '')?.deviceName || routeTruck}</b>
+        {routeStops.map((stop, index) => <div className="fleet-stop" key={index}><i>{String.fromCharCode(65 + index)}</i><div><b>{stop.schoolName || coordinate(stop.latitude, stop.longitude)}</b><small>{dateTime(stop.timestamp)}</small></div></div>)}
+        <button className="button primary" onClick={() => onOpen('Live truck map')}>View live map</button>
+      </div> : <p className="fleet-route-empty">A truck needs at least two GPS updates to show a route.</p>}
+    </section>
+  </div>;
 }
 
 function DeliveriesPage({ deliveries, loaded, total }: { deliveries: AdminData['deliveries']; loaded: boolean; total?: number }) {
@@ -209,18 +285,20 @@ function TrackingMap({ offices, office, locations, deviceLocations, events, late
   if (office && validCoordinates(office)) fences.push({ ...office, id: 'office', name: 'Geofence' });
   const eventPoints = events.filter(validCoordinates);
   const positions: LatLngExpression[] = [...gps, ...currentDevices, ...fences, ...eventPoints].map(point => [Number(point.latitude), Number(point.longitude)]);
-  if (!positions.length) return <div className="map-canvas map-empty">The API has no GPS, office, or event coordinates to map.</div>;
-  const anchor = latest && validCoordinates(latest) ? latest : fences[0] ?? gps[0] ?? eventPoints[0];
+  const anchor = latest && validCoordinates(latest) ? latest : fences[0] ?? gps[0] ?? currentDevices[0] ?? eventPoints[0] ?? { latitude: 13.0566, longitude: 80.2537 };
   const center: LatLngExpression = [Number(anchor.latitude), Number(anchor.longitude)];
-  return <div className="map-canvas leaflet-canvas"><MapContainer center={center} zoom={14} scrollWheelZoom className="leaflet-map">
+  return <div className="map-canvas leaflet-canvas"><MapContainer center={center} zoom={14} scrollWheelZoom={false} className="leaflet-map">
     <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
     <FitMapBounds positions={positions} />
     {fences.map((item, i) => {
       const polygons = polygonSets(item);
       const officeName = item.name || item.id;
-      return <React.Fragment key={item.id || i}>{polygons.length ? polygons.map((polygon, polygonIndex) => <Polygon key={`${item.id}-polygon-${polygonIndex}`} positions={polygon} pathOptions={{ color: '#16856d', fillColor: '#43b79b', fillOpacity: 0.14, weight: 3, dashArray: '7 5' }} />) : Number(item.radiusMeters) > 0 ? <Circle center={[Number(item.latitude), Number(item.longitude)]} radius={Number(item.radiusMeters)} pathOptions={{ color: '#16856d', fillColor: '#43b79b', fillOpacity: 0.14, weight: 3 }} /> : null}<Marker position={[Number(item.latitude), Number(item.longitude)]} icon={overviewOfficeIcon(officeName)}><Popup><b>{officeName}</b><br />{polygons.length ? 'Polygon geofence' : `${item.radiusMeters} m radius`}<br />Presence: {item.presence || 'Unknown'}<br />Device: {item.deviceId || 'Not assigned'}</Popup></Marker></React.Fragment>;
+      return <React.Fragment key={item.id || i}>{polygons.length ? polygons.map((polygon, polygonIndex) => <Polygon key={`${item.id}-polygon-${polygonIndex}`} positions={polygon} pathOptions={{ color: '#10caff', fillColor: '#02b6fd', fillOpacity: 0.24, weight: 3, dashArray: '7 5' }} />) : Number(item.radiusMeters) > 0 ? <Circle center={[Number(item.latitude), Number(item.longitude)]} radius={Number(item.radiusMeters)} pathOptions={{ color: '#10caff', fillColor: '#02b6fd', fillOpacity: 0.24, weight: 3 }} /> : null}<Marker position={[Number(item.latitude), Number(item.longitude)]} icon={overviewOfficeIcon(officeName)}><Popup><b>{officeName}</b><br />{polygons.length ? 'Polygon geofence' : `${item.radiusMeters} m radius`}<br />Presence: {item.presence || 'Unknown'}<br />Device: {item.deviceId || 'Not assigned'}</Popup></Marker></React.Fragment>;
     })}
-    {gps.length > 1 && <Polyline positions={gps.map(item => [Number(item.latitude), Number(item.longitude)] as LatLngExpression)} pathOptions={{ color: '#327ec4', weight: 3, opacity: 0.75 }} />}
+    {Array.from(new Set(gps.map(item => item.deviceId).filter(Boolean))).map(id => {
+      const trail = gps.filter(item => item.deviceId === id);
+      return trail.length > 1 && <Polyline key={id} positions={trail.map(item => [Number(item.latitude), Number(item.longitude)] as LatLngExpression)} pathOptions={{ color: '#14bbff', weight: 3, opacity: 0.85 }} />;
+    })}
     {gps.slice(0, -1).map((point, i) => <CircleMarker key={`gps-${point.timestamp}-${i}`} center={[Number(point.latitude), Number(point.longitude)]} radius={4} pathOptions={{ color: '#fff', weight: 1, fillColor: '#77a9cd', fillOpacity: 0.95 }}><Popup>GPS update<br />{coordinate(point.latitude, point.longitude)}<br />{dateTime(point.timestamp)}</Popup></CircleMarker>)}
     {currentDevices.map(item => {
       const label = item.deviceName || item.deviceId || 'Unknown truck';
@@ -243,21 +321,33 @@ function FitMapBounds({ positions }: { positions: LatLngExpression[] }) {
   return null;
 }
 
-function MapLegend() { return <div className="map-legend"><span><i className="legend-blue" />Truck locations</span><span><i className="legend-ring" />Geofence boundary</span><span><i className="legend-enter" />ENTER</span><span><i className="legend-exit" />EXIT</span><span className="map-coord">OpenStreetMap</span></div>; }
+function MapLegend() { return <div className="map-legend"><span><i className="legend-blue" />Truck locations</span><span><i className="legend-ring" />Geofence boundary</span><span><i className="legend-enter" />ENTER</span><span><i className="legend-exit" />EXIT</span><span><i className="legend-blue" />Route trail</span></div>; }
 function OfficeList({ offices, detailed = false }: { offices: SchoolGeofence[]; detailed?: boolean }) { return <div className="office-list">{offices.map(item => <div className="office-row" key={item.id}><span className="office-marker" aria-hidden="true">◎</span><div className="office-info"><b>{item.name || item.id}</b><small>{coordinate(item.latitude, item.longitude)} · {item.radiusMeters}m radius{item.deviceId ? ` · Device ${item.deviceId}` : ''}</small></div><span className={`presence-pill ${['PRESENT', 'INSIDE'].includes(String(item.presence).toUpperCase()) ? 'present' : ''}`}>{item.presence || 'UNKNOWN'}</span>{detailed && <span className="office-updated">{item.presenceUpdatedAt ? timeAgo(item.presenceUpdatedAt) : 'No presence update'}</span>}</div>)}</div>; }
-function EventsTable({ events }: { events: GeofenceEvent[] }) { return <div className="table-scroll"><table><thead><tr><th>EVENT</th><th>GEOFENCE</th><th>TYPE</th><th>COORDINATES</th><th>TIME</th></tr></thead><tbody>{events.map((event, i) => <tr key={event.eventId || i}><td><span className="event-id">{event.eventId || '—'}</span></td><td><span className="table-location"><b>{event.schoolName || event.schoolId}</b>{event.schoolName && <small>{event.schoolId}</small>}</span></td><td><span className={`event-pill ${event.eventType === 'ENTER' ? 'enter' : 'exit'}`}><i />{event.eventType || '—'}</span></td><td className="coordinates">{coordinate(event.latitude, event.longitude)}</td><td>{dateTime(event.eventTime)}</td></tr>)}</tbody></table></div>; }
 function ActivityChart({ events }: { events: GeofenceEvent[] }) {
-  if (!events.length) return <div className="chart-empty">No geofence events recorded today.</div>;
-  const counts = Array.from({ length: 12 }, (_, i) => ({ hour: i * 2, enter: 0, exit: 0 }));
-  events.forEach(event => { const hour = new Date(event.eventTime || '').getHours(); const bucket = counts[Math.floor(hour / 2)]; if (bucket && (event.eventType === 'ENTER' || event.eventType === 'EXIT')) bucket[event.eventType.toLowerCase() as 'enter' | 'exit'] += 1; });
-  const max = Math.max(1, ...counts.map(item => item.enter + item.exit));
-  return <div className="chart-wrap"><div className="chart-y"><span>{max}</span><span>{Math.ceil(max / 2)}</span><span>0</span></div><div className="chart"><div className="chart-gridline one"/><div className="chart-gridline two"/><div className="chart-gridline three"/><div className="bars">{counts.map(item => <div className="bar-group" key={item.hour}><div className="bar-pair"><i className="bar-enter" style={{ height: `${item.enter / max * 100}%` }} /><i className="bar-exit" style={{ height: `${item.exit / max * 100}%` }} /></div><span>{String(item.hour).padStart(2, '0')}</span></div>)}</div></div></div>;
+  const hour = 60 * 60 * 1000;
+  const now = Date.now();
+  const start = now - 24 * hour;
+  const counts = Array<number>(12).fill(0);
+  for (const event of events) {
+    const time = timeValue(event.eventTime);
+    if (time >= start && time <= now) counts[Math.min(11, Math.floor((time - start) / (2 * hour)))] += 1;
+  }
+  const max = Math.max(1, ...counts);
+  const points = counts.map((value, index) => `${index * 30},${92 - value / max * 78}`).join(' ');
+  return <div className="fleet-chart">
+    <svg viewBox="0 0 330 96" preserveAspectRatio="none" role="img" aria-label={`Geofence events in two-hour intervals over the last 24 hours. Counts: ${counts.join(', ')}.`}>
+      <defs><linearGradient id="activity-fill" x2="0%" y2="100%"><stop stopColor="#00b9ff" stopOpacity=".55" /><stop offset="1" stopColor="#00b9ff" stopOpacity=".04" /></linearGradient></defs>
+      {[14, 40, 66, 92].map(y => <line key={y} x1="0" x2="330" y1={y} y2={y} stroke="#213854" />)}
+      <polygon points={`0,92 ${points} 330,92`} fill="url(#activity-fill)" />
+      <polyline points={points} fill="none" stroke="#16caff" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+    </svg>
+    <div><span>24h ago</span><span>12h ago</span><span>Now</span></div>
+  </div>;
 }
 function Stat({ title, value, note, icon, tone, badge }: { title: string; value: string | number; note: string; icon: string; tone: string; badge: string }) { return <section className="stat-card"><div className={`stat-icon ${tone}`}>{icon}</div><span className={`stat-badge ${tone}`}>{badge}</span><div className="stat-title">{title}</div><div className="stat-value">{value}</div><div className="stat-note">{note}</div></section>; }
-function PanelHeader({ title, subtitle, action, onAction }: { title: string; subtitle: string; action?: string; onAction?: () => void }) { return <div className="panel-header"><div><h2>{title}</h2><p>{subtitle}</p></div>{action && <button className="text-link" onClick={onAction}>{action} <span>→</span></button>}</div>; }
-function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) { return <label className="search"><span>⌕</span><input value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} /></label>; }
+function PanelHeader({ title, subtitle, action, onAction }: { title: string; subtitle?: string; action?: string; onAction?: () => void }) { return <div className="panel-header"><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>{action && <button className="text-link" onClick={onAction}>{action} <span>→</span></button>}</div>; }
+function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) { return <label className="search"><span>⌕</span><input value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} aria-label={placeholder} /></label>; }
 function DateRange({ fromDate, toDate, setFromDate, setToDate }: { fromDate: string; toDate: string; setFromDate: (value: string) => void; setToDate: (value: string) => void }) { return <div className="date-range"><label>From <input type="date" value={fromDate} onChange={event => setFromDate(event.target.value)} /></label><label>To <input type="date" value={toDate} onChange={event => setToDate(event.target.value)} /></label></div>; }
-function DataFact({ label, value, detail }: { label: string; value: string | number; detail: string }) { return <div className="data-fact"><small>{label}</small><b>{value}</b><span>{detail}</span></div>; }
 function EmptyState({ loaded, title, detail }: { loaded: boolean; title: string; detail: string }) { return <div className="empty-state"><div className="empty-icon">⌖</div><b>{loaded ? title : 'Loading activity…'}</b><span>{loaded ? detail : 'Connecting to your tracking API.'}</span></div>; }
 function LoadingState() { return <div className="panel loading-panel"><div className="spinner"/><b>Loading geofencing data</b><span>Connecting to the admin API…</span></div>; }
 function validCoordinates(item: { latitude: number; longitude: number }): boolean { return Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)); }
@@ -274,7 +364,6 @@ function polygonSets(item: SchoolGeofence): LatLngExpression[][][] {
   return [];
 }
 function timeValue(value?: string): number { const result = value ? new Date(value).getTime() : 0; return Number.isFinite(result) ? result : 0; }
-function isToday(value?: string): boolean { return Boolean(value && new Date(value).toDateString() === new Date().toDateString()); }
 function inDateRange(value: string | undefined, from: string, to: string): boolean {
   if (!from && !to) return true;
   if (!value || Number.isNaN(new Date(value).getTime())) return false;
@@ -283,7 +372,7 @@ function inDateRange(value: string | undefined, from: string, to: string): boole
 }
 function sectionDescription(section: Section): string {
   const copy: Record<Section, string> = {
-    Overview: 'Review fleet locations and recent geofence activity.',
+    Overview: 'Real-time fleet, geofence and route intelligence',
     'Live truck map': 'View truck locations, GPS trails, and geofence boundaries.',
     'Geofences': 'Manage geofence boundaries and truck assignments.',
     Trucks: 'Manage registered trucks and their geofence assignments.',
