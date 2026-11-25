@@ -155,11 +155,11 @@ export function LiveLocationMap() {
     <div className="panel-header live-map-header"><div><h2>Live truck tracking</h2><p>Truck GPS locations and geofence boundaries · refreshes every 15 seconds</p></div><div className="live-map-state"><span className={error ? 'connection-dot offline' : 'connection-dot'} />{error ? 'API unavailable' : loading && !latest.length ? 'Loading' : 'Live'}</div></div>
     {error && <div className="map-error"><b>Location data unavailable</b><span>{error}</span></div>}
     <div className="live-map-filters">
-      <label>Geofence<select value={filters.schoolId} onChange={event => setFilter('schoolId', event.target.value)}><option value="">All geofences</option>{schools.map(school => <option key={school.id} value={school.id}>{school.name || school.id}</option>)}</select></label>
-      <label>Truck<select value={filters.deviceId ?? ''} onChange={event => setFilter('deviceId', event.target.value)}><option value="">All trucks</option>{registeredDevices.map(item => <option key={item.deviceId} value={item.deviceId}>{item.deviceName || item.deviceId}</option>)}</select></label>
-      <label>Status<select value={filters.status} onChange={event => setFilter('status', event.target.value)}><option value="ALL">All statuses</option><option value="INSIDE">Inside</option><option value="OUTSIDE">Outside</option><option value="STALE">Stale</option><option value="UNAVAILABLE">Unavailable</option></select></label>
-      <label>History from<input type="date" value={filters.startDate} onChange={event => setFilter('startDate', event.target.value)} /></label>
-      <label>History to<input type="date" value={filters.endDate} onChange={event => setFilter('endDate', event.target.value)} /></label>
+      <label>Geofence<select name="schoolId" value={filters.schoolId} onChange={event => setFilter('schoolId', event.target.value)}><option value="">All geofences</option>{schools.map(school => <option key={school.id} value={school.id}>{school.name || school.id}</option>)}</select></label>
+      <label>Truck<select name="deviceId" value={filters.deviceId ?? ''} onChange={event => setFilter('deviceId', event.target.value)}><option value="">All trucks</option>{registeredDevices.map(item => <option key={item.deviceId} value={item.deviceId}>{item.deviceName || item.deviceId}</option>)}</select></label>
+      <label>Status<select name="status" value={filters.status} onChange={event => setFilter('status', event.target.value)}><option value="ALL">All statuses</option><option value="INSIDE">Inside</option><option value="OUTSIDE">Outside</option><option value="STALE">Stale</option><option value="UNAVAILABLE">Unavailable</option></select></label>
+      <label>History from<input name="startDate" type="date" value={filters.startDate} onChange={event => setFilter('startDate', event.target.value)} /></label>
+      <label>History to<input name="endDate" type="date" value={filters.endDate} onChange={event => setFilter('endDate', event.target.value)} /></label>
       <span className="stale-note">Grey = GPS older than 5 min or unavailable</span>
     </div>
     <div className="live-map-frame">
